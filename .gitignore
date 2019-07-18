@@ -1,0 +1,14 @@
+.cache
+.gradle
+.classpath
+.idea
+.metadata
+.settings
+.project
+target
+*.iml
+*.swp
+.DS_Store
+build-target
+*.ipr
+*.iws
