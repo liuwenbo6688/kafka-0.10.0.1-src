@@ -14,6 +14,8 @@ package org.apache.kafka.common;
 
 /**
  * Information about a topic-partition.
+ *
+ *  代表了分区的详细信息，属于哪个topic，分区号，每个分区都有多个副本，Leader在哪个broker上，followers在哪些broker上，ISR列表，都在里面
  */
 public class PartitionInfo {
 
@@ -21,6 +23,7 @@ public class PartitionInfo {
     private final int partition;
     private final Node leader;
     private final Node[] replicas;
+    // ISR
     private final Node[] inSyncReplicas;
 
     public PartitionInfo(String topic, int partition, Node leader, Node[] replicas, Node[] inSyncReplicas) {

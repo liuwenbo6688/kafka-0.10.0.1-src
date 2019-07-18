@@ -30,12 +30,22 @@ import java.util.Set;
 public final class Cluster {
 
     private final boolean isBootstrapConfigured;
+    // kafka 的 broker 节点
     private final List<Node> nodes;
+    // 没有被授权访问的Topic的列表，就是kafka是可以支持权限控制的，如果你的客户端没有被授权访问某个Topic，那么就会放在这个列表里
     private final Set<String> unauthorizedTopics;
     private final Map<TopicPartition, PartitionInfo> partitionsByTopicPartition;
+
+    //  每个topic有哪些分区
     private final Map<String, List<PartitionInfo>> partitionsByTopic;
+
+    //  每个topic有哪些当前可用的分区，如果某个分区没有leader是存活的，此时那个分区就不可用了
     private final Map<String, List<PartitionInfo>> availablePartitionsByTopic;
+
+    // 每个broker上放了哪些分区
     private final Map<Integer, List<PartitionInfo>> partitionsByNode;
+
+    // broker.id -> Node
     private final Map<Integer, Node> nodesById;
 
     /**

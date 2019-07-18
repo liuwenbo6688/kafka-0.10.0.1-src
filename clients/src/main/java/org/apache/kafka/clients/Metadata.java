@@ -42,7 +42,9 @@ public final class Metadata {
     private int version;
     private long lastRefreshMs;
     private long lastSuccessfulRefreshMs;
+    // 集群信息
     private Cluster cluster;
+
     private boolean needUpdate;
     private final Set<String> topics;
     private final List<Listener> listeners;
@@ -63,6 +65,7 @@ public final class Metadata {
      */
     public Metadata(long refreshBackoffMs, long metadataExpireMs) {
         this.refreshBackoffMs = refreshBackoffMs;
+        // 元数据的刷新间隔
         this.metadataExpireMs = metadataExpireMs;
         this.lastRefreshMs = 0L;
         this.lastSuccessfulRefreshMs = 0L;
@@ -124,7 +127,14 @@ public final class Metadata {
         }
         long begin = System.currentTimeMillis();
         long remainingWaitMs = maxWaitMs;
+
         while (this.version <= lastVersion) {
+
+            /**
+             *  如果拉取成功了，那么version版本号，集群元数据的版本号一定会累加，
+             *  所以只要判断version版本号还没有累加，就说明此时Sender线程还没有成功的拉取元数据，
+             *  此时就是在主线程里，就是要wait阻塞等待最多60s即可
+             */
             if (remainingWaitMs != 0)
                 wait(remainingWaitMs);
             long elapsed = System.currentTimeMillis() - begin;
