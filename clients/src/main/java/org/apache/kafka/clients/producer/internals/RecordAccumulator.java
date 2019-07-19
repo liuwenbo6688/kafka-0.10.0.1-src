@@ -66,9 +66,15 @@ public final class RecordAccumulator {
     private final CompressionType compression;
     private final long lingerMs;
     private final long retryBackoffMs;
+
+    //
     private final BufferPool free;
+
     private final Time time;
+
+    // CopyOnWriteMap  存放数据的
     private final ConcurrentMap<TopicPartition, Deque<RecordBatch>> batches;
+
     private final IncompleteRecordBatches incomplete;
     // The following variables are only accessed by the sender thread, so we don't need to protect them.
     private final Set<TopicPartition> muted;
@@ -103,7 +109,10 @@ public final class RecordAccumulator {
         this.compression = compression;
         this.lingerMs = lingerMs;
         this.retryBackoffMs = retryBackoffMs;
+
+        // CopyOnWrite
         this.batches = new CopyOnWriteMap<>();
+
         String metricGrpName = "producer-metrics";
         this.free = new BufferPool(totalSize, batchSize, metrics, time, metricGrpName);
         this.incomplete = new IncompleteRecordBatches();
@@ -178,7 +187,10 @@ public final class RecordAccumulator {
             // we don't have an in-progress record batch try to allocate a new batch
             int size = Math.max(this.batchSize, Records.LOG_OVERHEAD + Record.recordSize(key, value));
             log.trace("Allocating a new {} byte message buffer for topic {} partition {}", size, tp.topic(), tp.partition());
+
+            // 分配一块内存
             ByteBuffer buffer = free.allocate(size, maxTimeToBlock);
+
             synchronized (dq) {
                 // Need to check if producer is closed again after grabbing the dequeue lock.
                 if (closed)
@@ -301,7 +313,10 @@ public final class RecordAccumulator {
         long nextReadyCheckDelayMs = Long.MAX_VALUE;
         boolean unknownLeadersExist = false;
 
+        // exhausted: 用完的; 耗尽的;
+        // 内存是否已经耗尽，可能有人阻塞在写操作，无法申请到内存，在等待新的内存块空闲出来才可以创建新的Batch
         boolean exhausted = this.free.queued() > 0;
+
         for (Map.Entry<TopicPartition, Deque<RecordBatch>> entry : this.batches.entrySet()) {
             TopicPartition part = entry.getKey();
             Deque<RecordBatch> deque = entry.getValue();
@@ -314,13 +329,21 @@ public final class RecordAccumulator {
                     RecordBatch batch = deque.peekFirst();
                     if (batch != null) {
                         boolean backingOff = batch.attempts > 0 && batch.lastAttemptMs + retryBackoffMs > nowMs;
+
                         long waitedTimeMs = nowMs - batch.lastAttemptMs;
                         long timeToWaitMs = backingOff ? retryBackoffMs : lingerMs;
                         long timeLeftMs = Math.max(timeToWaitMs - waitedTimeMs, 0);
+
+                        // Batch是否已满
+                        // 如果说Dequeue里超过一个Batch了，说明这个peekFirst返回的Batch就一定是已经满的，
                         boolean full = deque.size() > 1 || batch.records.isFull();
+
                         boolean expired = waitedTimeMs >= timeToWaitMs;
+                        // 综合算出是否可以发出
                         boolean sendable = full || expired || exhausted || closed || flushInProgress();
+
                         if (sendable && !backingOff) {
+                            //
                             readyNodes.add(leader);
                         } else {
                             // Note that this results in a conservative estimate since an un-sendable partition may have
@@ -547,7 +570,7 @@ public final class RecordAccumulator {
      * The set of nodes that have at least one complete record batch in the accumulator
      */
     public final static class ReadyCheckResult {
-        public final Set<Node> readyNodes;
+        public final Set<Node> readyNodes;// 可以发送数据的节点
         public final long nextReadyCheckDelayMs;
         public final boolean unknownLeadersExist;
 

@@ -83,6 +83,7 @@ public class Compressor {
 
     private final CompressionType type;
     private final DataOutputStream appendStream;
+    //
     private final ByteBufferOutputStream bufferStream;
     private final int initPos;
 

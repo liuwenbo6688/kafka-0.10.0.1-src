@@ -46,9 +46,15 @@ public final class BufferPool {
     private final long totalMemory;
     private final int poolableSize;
     private final ReentrantLock lock;
+
+    // Deque作为队列，缓存了一些ByteBuffer，也就是缓存了一批内存空间，可以用来复用的
     private final Deque<ByteBuffer> free;
+
     private final Deque<Condition> waiters;
+
+    // 剩余的还可以使用的内存空间的大小
     private long availableMemory;
+
     private final Metrics metrics;
     private final Time time;
     private final Sensor waitTime;
@@ -65,7 +71,9 @@ public final class BufferPool {
     public BufferPool(long memory, int poolableSize, Metrics metrics, Time time, String metricGrpName) {
         this.poolableSize = poolableSize;
         this.lock = new ReentrantLock();
+
         this.free = new ArrayDeque<ByteBuffer>();
+
         this.waiters = new ArrayDeque<Condition>();
         this.totalMemory = memory;
         this.availableMemory = memory;
@@ -109,6 +117,7 @@ public final class BufferPool {
                 // we have enough unallocated or pooled memory to immediately
                 // satisfy the request
                 freeUp(size);
+                //
                 this.availableMemory -= size;
                 lock.unlock();
                 return ByteBuffer.allocate(size);

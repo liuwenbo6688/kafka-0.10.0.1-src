@@ -60,6 +60,7 @@ public class NetworkClient implements KafkaClient {
     private final ClusterConnectionStates connectionStates;
 
     /* the set of requests currently being sent or awaiting a response */
+    // 对同一个Broker同一时间最多容忍5个请求发送过去但是还没有收到响应，所以如果对一个Broker已经发送了5个请求(默认)，都没收到响应，此时就不可以继续发送了
     private final InFlightRequests inFlightRequests;
 
     /* the socket send buffer size in bytes */
@@ -151,6 +152,7 @@ public class NetworkClient implements KafkaClient {
         if (node.isEmpty())
             throw new IllegalArgumentException("Cannot connect to empty node " + node);
 
+        //
         if (isReady(node, now))
             return true;
 
@@ -221,7 +223,9 @@ public class NetworkClient implements KafkaClient {
      * @param node The node
      */
     private boolean canSendRequest(String node) {
-        return connectionStates.isConnected(node) && selector.isChannelReady(node) && inFlightRequests.canSendMore(node);
+        return connectionStates.isConnected(node)  // 条件1
+                && selector.isChannelReady(node)   // 条件2
+                && inFlightRequests.canSendMore(node);// 条件3
     }
 
     /**
@@ -246,7 +250,7 @@ public class NetworkClient implements KafkaClient {
 
     /**
      * Do actual reads and writes to sockets.
-     *
+     * 进行网络IO通信操作的一个核心的方法，负责发送数据出去，也包括读取响应回来
      * @param timeout The maximum amount of time to wait (in ms) for responses if there are none immediately,
      *                must be non-negative. The actual timeout will be the minimum of timeout, request timeout and
      *                metadata timeout

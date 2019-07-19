@@ -488,9 +488,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
 
             // 基于获取到的topic元数据，使用Partitioner组件获取消息对应的分区
             int partition = partition(record, serializedKey, serializedValue, metadata.fetch());
-            int serializedSize = Records.LOG_OVERHEAD + Record.recordSize(serializedKey, serializedValue);
+
+            //
+           int serializedSize = Records.LOG_OVERHEAD + Record.recordSize(serializedKey, serializedValue);
             // 保证数据大小没有超过限制
             ensureValidRecordSize(serializedSize);
+
             // 构造  TopicPartition
             tp = new TopicPartition(record.topic(), partition);
             long timestamp = record.timestamp() == null ? time.milliseconds() : record.timestamp();

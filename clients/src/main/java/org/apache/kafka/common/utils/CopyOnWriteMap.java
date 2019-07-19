@@ -21,9 +21,14 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * A simple read-optimized map implementation that synchronizes only writes and does a full copy on each modification
+ *
+ * 自定义线程安全的数据结构
+ * CopyOnWrite 适合读多写少的场景，
  */
 public class CopyOnWriteMap<K, V> implements ConcurrentMap<K, V> {
 
+    // 普通的，非线程安全的Map数据结构
+    // 定义为 volatile 类型，就可以保证可见性
     private volatile Map<K, V> map;
 
     public CopyOnWriteMap() {
@@ -49,6 +54,7 @@ public class CopyOnWriteMap<K, V> implements ConcurrentMap<K, V> {
         return map.entrySet();
     }
 
+    // 直接读，没有任何锁的限制， 可以实现高并发的读
     @Override
     public V get(Object k) {
         return map.get(k);
@@ -79,6 +85,7 @@ public class CopyOnWriteMap<K, V> implements ConcurrentMap<K, V> {
         this.map = Collections.emptyMap();
     }
 
+    // 写的时候直接 synchronized 来保证线程安全
     @Override
     public synchronized V put(K k, V v) {
         Map<K, V> copy = new HashMap<K, V>(this.map);
