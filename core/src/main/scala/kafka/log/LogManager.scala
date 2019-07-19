@@ -38,7 +38,7 @@ import java.util.concurrent.{ExecutionException, ExecutorService, Executors, Fut
  * A background thread handles log retention by periodically truncating excess log segments.
  */
 @threadsafe
-class LogManager(val logDirs: Array[File],
+class LogManager(val logDirs: Array[File], // log.dirs
                  val topicConfigs: Map[String, LogConfig],
                  val defaultConfig: LogConfig,
                  val cleanerConfig: CleanerConfig,
@@ -51,6 +51,7 @@ class LogManager(val logDirs: Array[File],
                  private val time: Time) extends Logging {
   val RecoveryPointCheckpointFile = "recovery-point-offset-checkpoint"
   val LockFile = ".lock"
+  // 30 秒
   val InitialTaskDelayMs = 30*1000
   private val logCreationOrDeletionLock = new Object
   private val logs = new Pool[TopicAndPartition, Log]()
@@ -183,22 +184,30 @@ class LogManager(val logDirs: Array[File],
 
   /**
    *  Start the background threads to flush logs and do log cleanup
+    * 启动后台线程 刷新日志 和 清理
    */
   def startup() {
     /* Schedule the cleanup task to delete old logs */
     if(scheduler != null) {
       info("Starting log cleanup with a period of %d ms.".format(retentionCheckMs))
-      scheduler.schedule("kafka-log-retention", 
+
+      /* 定时调度的任务 */
+
+      scheduler.schedule("kafka-log-retention",
                          cleanupLogs, 
                          delay = InitialTaskDelayMs, 
                          period = retentionCheckMs, 
                          TimeUnit.MILLISECONDS)
+
       info("Starting log flusher with a default period of %d ms.".format(flushCheckMs))
-      scheduler.schedule("kafka-log-flusher", 
+
+      //
+      scheduler.schedule("kafka-log-flusher",
                          flushDirtyLogs, 
                          delay = InitialTaskDelayMs, 
                          period = flushCheckMs, 
                          TimeUnit.MILLISECONDS)
+      //
       scheduler.schedule("kafka-recovery-point-checkpoint",
                          checkpointRecoveryPointOffsets,
                          delay = InitialTaskDelayMs,

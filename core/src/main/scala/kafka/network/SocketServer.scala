@@ -51,7 +51,10 @@ import scala.util.control.{ControlThrowable, NonFatal}
 class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time) extends Logging with KafkaMetricsGroup {
 
   private val endpoints = config.listeners
+
+  // num.network.threads
   private val numProcessorThreads = config.numNetworkThreads
+
   private val maxQueuedRequests = config.queuedMaxRequests
   private val totalProcessorThreads = numProcessorThreads * endpoints.size
 
@@ -82,6 +85,7 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
 
       val sendBufferSize = config.socketSendBufferBytes
       val recvBufferSize = config.socketReceiveBufferBytes
+      // broker.id
       val brokerId = config.brokerId
 
       var processorBeginIndex = 0
@@ -92,9 +96,16 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
         for (i <- processorBeginIndex until processorEndIndex)
           processors(i) = newProcessor(i, connectionQuotas, protocol)
 
-        val acceptor = new Acceptor(endpoint, sendBufferSize, recvBufferSize, brokerId,
-          processors.slice(processorBeginIndex, processorEndIndex), connectionQuotas)
+        // 初始化 Acceptor
+        val acceptor = new Acceptor(endpoint,
+          sendBufferSize,
+          recvBufferSize,
+          brokerId,
+          processors.slice(processorBeginIndex, processorEndIndex), //
+          connectionQuotas)
+
         acceptors.put(endpoint, acceptor)
+
         Utils.newThread("kafka-socket-acceptor-%s-%d".format(protocol.toString, endpoint.port), acceptor, false).start()
         acceptor.awaitStartup()
 
@@ -270,6 +281,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                   throw new IllegalStateException("Unrecognized key state for acceptor thread.")
 
                 // round robin to the next processor thread
+                // round 轮询
                 currentProcessor = (currentProcessor + 1) % processors.length
               } catch {
                 case e: Throwable => error("Error while accepting connection", e)
@@ -333,6 +345,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                   socketChannel.socket.getSendBufferSize, sendBufferSize,
                   socketChannel.socket.getReceiveBufferSize, recvBufferSize))
 
+      // socketChannel 交给 processor
       processor.accept(socketChannel)
     } catch {
       case e: TooManyConnectionsException =>
@@ -410,7 +423,10 @@ private[kafka] class Processor(val id: Int,
         // register any new responses for writing
         processNewResponses()
         poll()
+
+        //
         processCompletedReceives()
+
         processCompletedSends()
         processDisconnected()
       } catch {
@@ -486,6 +502,7 @@ private[kafka] class Processor(val id: Int,
         val session = RequestChannel.Session(new KafkaPrincipal(KafkaPrincipal.USER_TYPE, channel.principal.getName),
           channel.socketAddress)
         val req = RequestChannel.Request(processor = id, connectionId = receive.source, session = session, buffer = receive.payload, startTimeMs = time.milliseconds, securityProtocol = protocol)
+        //
         requestChannel.sendRequest(req)
         selector.mute(receive.source)
       } catch {

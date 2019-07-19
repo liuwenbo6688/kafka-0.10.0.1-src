@@ -599,6 +599,7 @@ class Log(val dir: File,
 
   /**
    *  The offset of the next message that will be appended to the log
+    * LEO
    */
   def logEndOffset: Long = nextOffsetMetadata.messageOffset
 
@@ -699,8 +700,10 @@ class Log(val dir: File,
       return
     debug("Flushing log '" + name + " up to offset " + offset + ", last flushed: " + lastFlushTime + " current time: " +
           time.milliseconds + " unflushed = " + unflushedMessages)
+    //
     for(segment <- logSegments(this.recoveryPoint, offset))
       segment.flush()
+
     lock synchronized {
       if(offset > this.recoveryPoint) {
         this.recoveryPoint = offset

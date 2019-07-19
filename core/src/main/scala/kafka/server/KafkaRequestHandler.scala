@@ -26,13 +26,15 @@ import org.apache.kafka.common.utils.Utils
 
 /**
  * A thread that answers kafka requests.
+  * 处理请求的线程  ， 也是一个Runnable
  */
 class KafkaRequestHandler(id: Int,
                           brokerId: Int,
                           val aggregateIdleMeter: Meter,
                           val totalHandlerThreads: Int,
                           val requestChannel: RequestChannel,
-                          apis: KafkaApis) extends Runnable with Logging {
+                          /* 封装了处理各种不同请求的业务逻辑 */
+                          apis: KafkaApis ) extends Runnable with Logging {
   this.logIdent = "[Kafka Request Handler " + id + " on Broker " + brokerId + "], "
 
   def run() {
@@ -45,6 +47,8 @@ class KafkaRequestHandler(id: Int,
           // time_window is independent of the number of threads, each recorded idle
           // time should be discounted by # threads.
           val startSelectTime = SystemTime.nanoseconds
+
+          // 拿到要处理的请求
           req = requestChannel.receiveRequest(300)
           val idleTime = SystemTime.nanoseconds - startSelectTime
           aggregateIdleMeter.mark(idleTime / totalHandlerThreads)
@@ -57,6 +61,8 @@ class KafkaRequestHandler(id: Int,
         }
         req.requestDequeueTimeMs = SystemTime.milliseconds
         trace("Kafka request handler %d on broker %d handling request %s".format(id, brokerId, req))
+        // 转交给  KafkaApis 处理
+        // KafkaApis 封装了处理各种不同请求的业务逻辑
         apis.handle(req)
       } catch {
         case e: Throwable => error("Exception when handling request", e)

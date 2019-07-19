@@ -73,7 +73,9 @@ class KafkaApis(val requestChannel: RequestChannel,
       trace("Handling request:%s from connection %s;securityProtocol:%s,principal:%s".
         format(request.requestDesc(true), request.connectionId, request.securityProtocol, request.session.principal))
       ApiKeys.forId(request.requestId) match {
+          // 生产
         case ApiKeys.PRODUCE => handleProducerRequest(request)
+
         case ApiKeys.FETCH => handleFetchRequest(request)
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
@@ -398,15 +400,16 @@ class KafkaApis(val requestChannel: RequestChannel,
 
       // Convert ByteBuffer to ByteBufferMessageSet
       val authorizedMessagesPerPartition = authorizedRequestInfo.map {
+        //  ByteBufferMessageSet
         case (topicPartition, buffer) => (topicPartition, new ByteBufferMessageSet(buffer))
       }
 
       // call the replica manager to append messages to the replicas
       replicaManager.appendMessages(
         produceRequest.timeout.toLong,
-        produceRequest.acks,
+        produceRequest.acks, // 著名的acks
         internalTopicsAllowed,
-        authorizedMessagesPerPartition,
+        authorizedMessagesPerPartition, //
         sendResponseCallback)
 
       // if the request is put into the purgatory, it will have a held reference
