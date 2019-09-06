@@ -240,10 +240,25 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             //分区器   默认 DefaultPartitioner
             this.partitioner = config.getConfiguredInstance(ProducerConfig.PARTITIONER_CLASS_CONFIG, Partitioner.class);
 
+            // retry.backoff.ms
             long retryBackoffMs = config.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG);
+
+            /**
+             * 非常核心的组件，客户端的元数据管理
+             * 用来从broker集群去拉取元数据的（Topic -> Partitions）
+             * 后面肯定会每隔一小段时间就再次发送请求刷新元数据
+             * 还有就是在发送消息的时候发现，你要写入的某个topic对应的元数据不在本地，那么他肯定会通过这个组件，发送请求去broker尝试拉取这个topic对应的元数据
+             * 如果增加broker，也会涉及元数据的变化
+             */
             this.metadata = new Metadata(retryBackoffMs, config.getLong(ProducerConfig.METADATA_MAX_AGE_CONFIG));
+
+            // max.request.size
             this.maxRequestSize = config.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG);
+
+            // buffer.memory  默认32M
             this.totalMemorySize = config.getLong(ProducerConfig.BUFFER_MEMORY_CONFIG);
+
+            // compression.type
             this.compressionType = CompressionType.forName(config.getString(ProducerConfig.COMPRESSION_TYPE_CONFIG));
             /* check for user defined settings.
              * If the BLOCK_ON_BUFFER_FULL is set to true,we do not honor METADATA_FETCH_TIMEOUT_CONFIG.
@@ -265,8 +280,10 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             } else if (userProvidedConfigs.containsKey(ProducerConfig.METADATA_FETCH_TIMEOUT_CONFIG)) {
                 log.warn(ProducerConfig.METADATA_FETCH_TIMEOUT_CONFIG + " config is deprecated and will be removed soon. " +
                         "Please use " + ProducerConfig.MAX_BLOCK_MS_CONFIG);
+                // 如果存在配置 metadata.fetch.timeout.ms，就用没有就用 max.block.ms
                 this.maxBlockTimeMs = config.getLong(ProducerConfig.METADATA_FETCH_TIMEOUT_CONFIG);
             } else {
+                // max.block.ms
                 this.maxBlockTimeMs = config.getLong(ProducerConfig.MAX_BLOCK_MS_CONFIG);
             }
 
@@ -277,32 +294,49 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             if (userProvidedConfigs.containsKey(ProducerConfig.TIMEOUT_CONFIG)) {
                 log.warn(ProducerConfig.TIMEOUT_CONFIG + " config is deprecated and will be removed soon. Please use " +
                         ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
+                // timeout.ms
                 this.requestTimeoutMs = config.getInt(ProducerConfig.TIMEOUT_CONFIG);
             } else {
+                // request.timeout.ms
                 this.requestTimeoutMs = config.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
             }
 
-            this.accumulator = new RecordAccumulator(config.getInt(ProducerConfig.BATCH_SIZE_CONFIG),
+            /**
+             * 核心组件
+             * 负责消息的复杂缓冲机制
+             *
+             * batch.size + linger.ms  一起来控制缓冲区batch发送的机制
+             */
+            this.accumulator = new RecordAccumulator(
+                    config.getInt(ProducerConfig.BATCH_SIZE_CONFIG), // batch.size  默认16KB
                     this.totalMemorySize,
                     this.compressionType,
-                    config.getLong(ProducerConfig.LINGER_MS_CONFIG),
+                    config.getLong(ProducerConfig.LINGER_MS_CONFIG), //  linger.ms
                     retryBackoffMs,
                     metrics,
                     time);
-            // bootstrap.servers
+
+            // bootstrap.servers  kafka集群的brokers地址
             List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(config.getList(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
+
             // 更新集群的 meta 数据
+            // 初始化的时候，直接调用Metadata的update方法，去broker上拉取一次集群的元数据过来
             this.metadata.update(Cluster.bootstrap(addresses), time.milliseconds());
             ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config.values());
 
             // 网络通信组件
             NetworkClient client = new NetworkClient(
+                    // connections.max.idle.ms  和broker的一个连接最多空闲多久就要被回收
                     new Selector(config.getLong(ProducerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG), this.metrics, time, "producer", channelBuilder),
                     this.metadata,
                     clientId,
+                    // max.in.flight.requests.per.connection  和broker的一个连接能允许多少请求没有收到响应  默认值5
                     config.getInt(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION),
+                    // reconnect.backoff.ms
                     config.getLong(ProducerConfig.RECONNECT_BACKOFF_MS_CONFIG),
+                    // send.buffer.bytes
                     config.getInt(ProducerConfig.SEND_BUFFER_CONFIG),
+                    // receive.buffer.bytes
                     config.getInt(ProducerConfig.RECEIVE_BUFFER_CONFIG),
                     this.requestTimeoutMs, time);
 
@@ -312,7 +346,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     this.accumulator,
                     config.getInt(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION) == 1,
                     config.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG),
-                    // acks
+                    // acks  默认是1（只要leader写入成功，就算写入成功了）
                     (short) parseAcks(config.getString(ProducerConfig.ACKS_CONFIG)),
                     config.getInt(ProducerConfig.RETRIES_CONFIG),
                     this.metrics,
@@ -327,6 +361,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
 
             this.errors = this.metrics.sensor("errors");
 
+            // key.serializer
             if (keySerializer == null) {
                 this.keySerializer = config.getConfiguredInstance(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
                         Serializer.class);
@@ -335,6 +370,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 config.ignore(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG);
                 this.keySerializer = keySerializer;
             }
+
+            // value.serializer
             if (valueSerializer == null) {
                 this.valueSerializer = config.getConfiguredInstance(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
                         Serializer.class);

@@ -111,6 +111,7 @@ public class Sender implements Runnable {
         this.client = client;
         this.accumulator = accumulator;
         this.metadata = metadata;
+        //是否保证顺序， max.in.flight.requests.per.connection == 1 意味着是可以保证发送顺序的
         this.guaranteeMessageOrder = guaranteeMessageOrder;
         this.maxRequestSize = maxRequestSize;
         this.running = true;
