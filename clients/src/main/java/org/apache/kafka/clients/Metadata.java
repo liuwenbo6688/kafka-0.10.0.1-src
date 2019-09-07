@@ -175,6 +175,10 @@ public final class Metadata {
      * Update the cluster metadata
      */
     public synchronized void update(Cluster cluster, long now) {
+        /**
+         * 初始化的时候，并没有去集群拉取元数据
+         * 只是做了最基本的初始化
+         */
         this.needUpdate = false;
         this.lastRefreshMs = now;
         this.lastSuccessfulRefreshMs = now;

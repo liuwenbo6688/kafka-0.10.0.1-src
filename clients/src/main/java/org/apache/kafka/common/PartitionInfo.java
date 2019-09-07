@@ -21,8 +21,10 @@ public class PartitionInfo {
 
     private final String topic;
     private final int partition;
-    private final Node leader;
-    private final Node[] replicas;
+
+    private final Node leader; // 此分区的leader
+    private final Node[] replicas; // 此分区的followers
+
     // ISR
     private final Node[] inSyncReplicas;
 

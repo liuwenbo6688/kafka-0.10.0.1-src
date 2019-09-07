@@ -39,6 +39,7 @@ public final class RecordBatch {
     public final long createdMs;
     public long drainedMs;
     public long lastAttemptMs;
+    //
     public final MemoryRecords records;
     public final TopicPartition topicPartition;
     public final ProduceRequestResult produceFuture;
@@ -65,9 +66,14 @@ public final class RecordBatch {
      */
     public FutureRecordMetadata tryAppend(long timestamp, byte[] key, byte[] value, Callback callback, long now) {
         if (!this.records.hasRoomFor(key, value)) {
+            // batch 没有空间（写满了），返回null
             return null;
         } else {
+            /**
+             * 通过  MemoryRecords 写数据
+             */
             long checksum = this.records.append(offsetCounter++, timestamp, key, value);
+
             this.maxRecordSize = Math.max(this.maxRecordSize, Record.recordSize(key, value));
             this.lastAppendTime = now;
             FutureRecordMetadata future = new FutureRecordMetadata(this.produceFuture, this.recordCount,

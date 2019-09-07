@@ -139,6 +139,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     private final Partitioner partitioner;
 
     private final int maxRequestSize;
+    // buffer.memory
     private final long totalMemorySize;
 
     // 从broker集群去拉取元数据的Topics
@@ -489,7 +490,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     @Override
     public Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
         // intercept the record, which can be potentially modified; this method does not throw exceptions
+        // 如果有定义拦截器，先对数据应用一下拦截器的方法,一般很少用拦截器
         ProducerRecord<K, V> interceptedRecord = this.interceptors == null ? record : this.interceptors.onSend(record);
+
+        /**
+         *
+         */
         return doSend(interceptedRecord, callback);
     }
 
@@ -502,9 +508,15 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         try {
             // first make sure the metadata for the topic is available
             // 同步阻塞等待获取topic元数据
+            /**
+             * 调用同步阻塞方法，去等待获取topic对应的元数据，
+             * 如果此时客户端还没缓存这个topic的元数据，那么一定会发送网络请求到broker去拉取topic的元数据
+             * 但是下一次就可以直接根据缓存好的元数据来发送了
+             */
             long waitedOnMetadataMs = waitOnMetadata(record.topic(), this.maxBlockTimeMs);
 
             long remainingWaitMs = Math.max(0, this.maxBlockTimeMs - waitedOnMetadataMs);
+
             // 序列化 key 和 value
             byte[] serializedKey;
             try {
@@ -526,8 +538,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             // 基于获取到的topic元数据，使用Partitioner组件获取消息对应的分区
             int partition = partition(record, serializedKey, serializedValue, metadata.fetch());
 
-            //
-           int serializedSize = Records.LOG_OVERHEAD + Record.recordSize(serializedKey, serializedValue);
+            // 计算下发送数据的总大小
+            int serializedSize = Records.LOG_OVERHEAD + Record.recordSize(serializedKey, serializedValue);
             // 保证数据大小没有超过限制
             ensureValidRecordSize(serializedSize);
 
@@ -538,8 +550,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             // producer callback will make sure to call both 'callback' and interceptor callback
             Callback interceptCallback = this.interceptors == null ? callback : new InterceptorCallback<>(callback, this.interceptors, tp);
 
-            //  将消息添加到内存缓冲中
+            //  非常关键的步骤：将消息添加到内存缓冲中
             RecordAccumulator.RecordAppendResult result = accumulator.append(tp, timestamp, serializedKey, serializedValue, interceptCallback, remainingWaitMs);
+
             if (result.batchIsFull || result.newBatchCreated) {
                 // 如果某个分区对应的batch填满了，或者是新创建了一个batch，此时就会唤醒Sender线程，让他来进行工作，负责发送batch
                 log.trace("Waking up the sender since topic {} partition {} is either full or getting a new batch", record.topic(), partition);
@@ -602,8 +615,10 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             int version = metadata.requestUpdate();
 
             // 唤醒Sender线程
+            // 是由Sender线程去唤醒拉取元数据，异步拉取，如果拉取成功了，此时版本号version一定会增加
             sender.wakeup();
 
+            // 一直等待元数据拉取成功
             metadata.awaitUpdate(version, remainingWaitMs);
             long elapsed = time.milliseconds() - begin;
             if (elapsed >= maxWaitMs)
@@ -623,6 +638,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
      * Validate that the record size isn't too large
      */
     private void ensureValidRecordSize(int size) {
+        // 发送的数据不能超过请求最大限制 maxRequestSize
+        // 也不能超过内存缓冲的大小 totalMemorySize
         if (size > this.maxRequestSize)
             throw new RecordTooLargeException("The message is " + size +
                                               " bytes when serialized which is larger than the maximum request size you have configured with the " +
@@ -791,6 +808,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
      * calls configured partitioner class to compute the partition.
      */
     private int partition(ProducerRecord<K, V> record, byte[] serializedKey , byte[] serializedValue, Cluster cluster) {
+
+        // 这边的意思是说，创建ProducerRecord的时候，是可以直接手动指定分区id的
+        // 一般也不会这么用
         Integer partition = record.partition();
         if (partition != null) {
             List<PartitionInfo> partitions = cluster.partitionsForTopic(record.topic());
@@ -801,6 +821,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             }
             return partition;
         }
+
+        // 正常是用 Partitioner 组件进行指定分区
         return this.partitioner.partition(record.topic(), record.key(), serializedKey, record.value(), serializedValue,
             cluster);
     }

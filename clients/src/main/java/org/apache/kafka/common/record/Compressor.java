@@ -108,6 +108,7 @@ public class Compressor {
         }
 
         // create the stream
+        // 设计模式-装饰者模式
         bufferStream = new ByteBufferOutputStream(buffer);
         appendStream = wrapForOutput(bufferStream, type, COMPRESSION_DEFAULT_BUFFER_SIZE);
     }

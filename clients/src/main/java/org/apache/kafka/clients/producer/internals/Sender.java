@@ -111,7 +111,7 @@ public class Sender implements Runnable {
         this.client = client;
         this.accumulator = accumulator;
         this.metadata = metadata;
-        //是否保证顺序， max.in.flight.requests.per.connection == 1 意味着是可以保证发送顺序的
+        //是否保证顺序， max.in.flight.requests.per.connection
         this.guaranteeMessageOrder = guaranteeMessageOrder;
         this.maxRequestSize = maxRequestSize;
         this.running = true;
@@ -130,6 +130,7 @@ public class Sender implements Runnable {
         log.debug("Starting Kafka producer I/O thread.");
 
         // main loop, runs until close is called
+        //
         while (running) {
             try {
                 run(time.milliseconds());
@@ -137,6 +138,9 @@ public class Sender implements Runnable {
                 log.error("Uncaught error in kafka producer I/O thread: ", e);
             }
         }
+
+
+        // 下面就是关闭流程了
 
         log.debug("Beginning shutdown of Kafka producer I/O thread, sending remaining records.");
 

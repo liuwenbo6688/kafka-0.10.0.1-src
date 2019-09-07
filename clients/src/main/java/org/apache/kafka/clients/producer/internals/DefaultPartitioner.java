@@ -70,6 +70,7 @@ public class DefaultPartitioner implements Partitioner {
         int numPartitions = partitions.size();
 
         if (keyBytes == null) {
+            // 没有指定分区key
             int nextValue = counter.getAndIncrement();
             List<PartitionInfo> availablePartitions = cluster.availablePartitionsForTopic(topic);
             if (availablePartitions.size() > 0) {
@@ -80,6 +81,8 @@ public class DefaultPartitioner implements Partitioner {
                 return DefaultPartitioner.toPositive(nextValue) % numPartitions;
             }
         } else {
+            // 如果制定了分区key
+            // 使用 工具类的murmur2算法计算一个hash值，相同key的hash值是一样的 ，就能保证路由到的分区是相同的
             // hash the keyBytes to choose a partition
             return DefaultPartitioner.toPositive(Utils.murmur2(keyBytes)) % numPartitions;
         }

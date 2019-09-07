@@ -62,6 +62,7 @@ public final class RecordAccumulator {
     private volatile boolean closed;
     private final AtomicInteger flushesInProgress;
     private final AtomicInteger appendsInProgress;
+    // 默认 16KB
     private final int batchSize;
     private final CompressionType compression;
     private final long lingerMs;
@@ -73,6 +74,7 @@ public final class RecordAccumulator {
     private final Time time;
 
     // CopyOnWriteMap  存放数据的
+    // 一个分区对应一个缓存队列
     private final ConcurrentMap<TopicPartition, Deque<RecordBatch>> batches;
 
     private final IncompleteRecordBatches incomplete;
@@ -95,7 +97,7 @@ public final class RecordAccumulator {
      * @param time The time instance to use
      */
     public RecordAccumulator(int batchSize,
-                             long totalSize,
+                             long totalSize, // buffer.memory
                              CompressionType compression,
                              long lingerMs,
                              long retryBackoffMs,
@@ -172,41 +174,61 @@ public final class RecordAccumulator {
                                      long maxTimeToBlock) throws InterruptedException {
         // We keep track of the number of appending thread to make sure we do not miss batches in
         // abortIncompleteBatches().
-        appendsInProgress.incrementAndGet();
+        appendsInProgress.incrementAndGet();// 当前有多少线程正在尝试把消息写到内存缓冲中去
         try {
             // check if we have an in-progress batch
+            //
             Deque<RecordBatch> dq = getOrCreateDeque(tp);
-            synchronized (dq) {
+
+            synchronized (dq) { // 对队列加锁后，尝试将消息放入已有的队列
                 if (closed)
                     throw new IllegalStateException("Cannot send after the producer is closed.");
+
+                // 尝试把数据放到 队列dq里面去，存在写入失败可能的，因为没有对应的batch
+                // 尝试将消息写入队列的最后一个batch中，一开始是空的，写入肯定是失败的
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, callback, dq);
                 if (appendResult != null)
                     return appendResult;
             }
 
             // we don't have an in-progress record batch try to allocate a new batch
+            // batchSize默认16KB， 申请的内存大小是batchSize和发送数据大小的较大者
             int size = Math.max(this.batchSize, Records.LOG_OVERHEAD + Record.recordSize(key, value));
             log.trace("Allocating a new {} byte message buffer for topic {} partition {}", size, tp.topic(), tp.partition());
 
             // 分配一块内存
             ByteBuffer buffer = free.allocate(size, maxTimeToBlock);
 
+
+            // 又加了一次锁
             synchronized (dq) {
+
+                // 这里用了一次double check
                 // Need to check if producer is closed again after grabbing the dequeue lock.
                 if (closed)
                     throw new IllegalStateException("Cannot send after the producer is closed.");
 
+
+                /**
+                 * 再尝试一次tryAppend
+                 * 如果中间已经有别的线程创建了RecordBatch的话，就追加成功了，此时要释放掉之前申请的内存
+                 */
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, callback, dq);
                 if (appendResult != null) {
                     // Somebody else found us a batch, return the one we waited for! Hopefully this doesn't happen often...
+                    // 回收内存空间
                     free.deallocate(buffer);
                     return appendResult;
                 }
+
+
+
                 MemoryRecords records = MemoryRecords.emptyRecords(buffer, compression, this.batchSize);
                 RecordBatch batch = new RecordBatch(tp, records, time.milliseconds());
                 FutureRecordMetadata future = Utils.notNull(batch.tryAppend(timestamp, key, value, callback, time.milliseconds()));
 
                 dq.addLast(batch);
+                // 加入没有完成的 队列中
                 incomplete.add(batch);
                 return new RecordAppendResult(future, dq.size() > 1 || batch.records.isFull(), true);
             }
@@ -220,14 +242,18 @@ public final class RecordAccumulator {
      * resources (like compression streams buffers).
      */
     private RecordAppendResult tryAppend(long timestamp, byte[] key, byte[] value, Callback callback, Deque<RecordBatch> deque) {
-        RecordBatch last = deque.peekLast();
+        RecordBatch last = deque.peekLast(); // 拿出最后的一个或者最近的一个 RecordBatch
+
         if (last != null) {
+            // 写入
             FutureRecordMetadata future = last.tryAppend(timestamp, key, value, callback, time.milliseconds());
             if (future == null)
+                //没有空间的情况执行close
                 last.records.close();
             else
                 return new RecordAppendResult(future, deque.size() > 1 || last.records.isFull(), false);
         }
+
         return null;
     }
 
@@ -446,10 +472,12 @@ public final class RecordAccumulator {
         if (d != null)
             return d;
         d = new ArrayDeque<>();
+
         Deque<RecordBatch> previous = this.batches.putIfAbsent(tp, d);
         if (previous == null)
             return d;
         else
+            //如果之前已经存在，直接返回之前存在的Deque
             return previous;
     }
 

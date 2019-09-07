@@ -185,6 +185,17 @@ public final class Record {
     }
 
     public static int recordSize(int keySize, int valueSize) {
+        /**
+         * 数据格式
+         * crc
+         * magic
+         * attribute
+         * timestamp
+         * key length
+         * key
+         * value length
+         * value
+         */
         return CRC_LENGTH + MAGIC_LENGTH + ATTRIBUTE_LENGTH + TIMESTAMP_LENGTH + KEY_SIZE_LENGTH + keySize + VALUE_SIZE_LENGTH + valueSize;
     }
 

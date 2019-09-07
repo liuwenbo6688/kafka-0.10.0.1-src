@@ -133,14 +133,16 @@ public class MemoryRecords implements Records {
     public void close() {
         if (writable) {
             // close the compressor to fill-in wrapper message metadata if necessary
+            // 关闭流
             compressor.close();
 
+            // ByteBuffer flip一下，从写变为读
             // flip the underlying buffer to be ready for reads
             buffer = compressor.buffer();
             buffer.flip();
 
             // reset the writable flag
-            writable = false;
+            writable = false;// 不可再写数据了
         }
     }
 

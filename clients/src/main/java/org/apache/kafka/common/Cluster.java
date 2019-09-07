@@ -26,14 +26,19 @@ import java.util.Set;
 
 /**
  * A representation of a subset of the nodes, topics, and partitions in the Kafka cluster.
+ *
+ * 代表了集群的元数据
  */
 public final class Cluster {
 
     private final boolean isBootstrapConfigured;
     // kafka 的 broker 节点
     private final List<Node> nodes;
+
     // 没有被授权访问的Topic的列表，就是kafka是可以支持权限控制的，如果你的客户端没有被授权访问某个Topic，那么就会放在这个列表里
     private final Set<String> unauthorizedTopics;
+
+    // 每个partition对应的信息
     private final Map<TopicPartition, PartitionInfo> partitionsByTopicPartition;
 
     //  每个topic有哪些分区

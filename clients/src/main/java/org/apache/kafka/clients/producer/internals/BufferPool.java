@@ -43,8 +43,12 @@ import org.apache.kafka.common.utils.Time;
  */
 public final class BufferPool {
 
+    // buffer.memory  默认 32MB
     private final long totalMemory;
+
+    // batch.size  默认 16KB
     private final int poolableSize;
+
     private final ReentrantLock lock;
 
     // Deque作为队列，缓存了一些ByteBuffer，也就是缓存了一批内存空间，可以用来复用的
@@ -69,14 +73,20 @@ public final class BufferPool {
      * @param metricGrpName logical group name for metrics
      */
     public BufferPool(long memory, int poolableSize, Metrics metrics, Time time, String metricGrpName) {
+
+        // 使用 batch.size 初始化
         this.poolableSize = poolableSize;
+
         this.lock = new ReentrantLock();
 
         this.free = new ArrayDeque<ByteBuffer>();
 
         this.waiters = new ArrayDeque<Condition>();
+
+        // 初始化都是使用设置的 buffer.memory 设置
         this.totalMemory = memory;
         this.availableMemory = memory;
+
         this.metrics = metrics;
         this.time = time;
         this.waitTime = this.metrics.sensor("bufferpool-wait-time");
@@ -113,7 +123,9 @@ public final class BufferPool {
             // now check if the request is immediately satisfiable with the
             // memory on hand or if we need to block
             int freeListSize = this.free.size() * this.poolableSize;
+
             if (this.availableMemory + freeListSize >= size) {
+                // 有足够的空间可以分配
                 // we have enough unallocated or pooled memory to immediately
                 // satisfy the request
                 freeUp(size);
@@ -123,6 +135,7 @@ public final class BufferPool {
                 return ByteBuffer.allocate(size);
             } else {
                 // we are out of memory and will have to block
+                // 没有足够空间的时候，会阻塞一段时间
                 int accumulated = 0;
                 ByteBuffer buffer = null;
                 Condition moreMemory = this.lock.newCondition();
@@ -135,6 +148,7 @@ public final class BufferPool {
                     long timeNs;
                     boolean waitingTimeElapsed;
                     try {
+                        // 就在这阻塞等待一段时间
                         waitingTimeElapsed = !moreMemory.await(remainingTimeToBlockNs, TimeUnit.NANOSECONDS);
                     } catch (InterruptedException e) {
                         this.waiters.remove(moreMemory);
@@ -217,8 +231,14 @@ public final class BufferPool {
                 buffer.clear();
                 this.free.add(buffer);
             } else {
+                /**
+                 * 万一有人的消息是大于16KB的，比如分配的那个 ByteBuffer 是52KB
+                 * 如何对这个52KB的 ByteBuffer进行处理？他会直接释放这块内存，不去管它，让gc掉，只是把 availableMemory 加回去就行了
+                 */
                 this.availableMemory += size;
             }
+
+            // 这个地方很精妙，通知那边等待申请内存的线程，有空间可用了
             Condition moreMem = this.waiters.peekFirst();
             if (moreMem != null)
                 moreMem.signal();
