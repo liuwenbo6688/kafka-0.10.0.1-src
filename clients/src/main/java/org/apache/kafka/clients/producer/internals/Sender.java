@@ -191,8 +191,12 @@ public class Sender implements Runnable {
         long notReadyTimeout = Long.MAX_VALUE;
         while (iter.hasNext()) {
             Node node = iter.next();
-            //
+
             if (!this.client.ready(node, now)) {
+                /**
+                 * 如果跟broker还没有建立连接，是不会发送请求的
+                 * 在迭代器中就把这个节点删掉了
+                 */
                 iter.remove();
                 notReadyTimeout = Math.min(notReadyTimeout, this.client.connectionDelay(node, now));
             }
@@ -217,7 +221,12 @@ public class Sender implements Runnable {
             this.sensors.recordErrors(expiredBatch.topicPartition.topic(), expiredBatch.recordCount);
 
         sensors.updateProduceRequestMetrics(batches);
+
+        /**
+         * 构建请求 ClientRequest
+         */
         List<ClientRequest> requests = createProduceRequests(batches, now);
+
         // If we have any nodes that are ready to send + have sendable data, poll with 0 timeout so this can immediately
         // loop and try sending more data. Otherwise, the timeout is determined by nodes that have partitions with data
         // that isn't yet sendable (e.g. lingering, backing off). Note that this specifically does not include nodes
@@ -228,6 +237,9 @@ public class Sender implements Runnable {
             log.trace("Created {} produce requests: {}", requests.size(), requests);
             pollTimeout = 0;
         }
+
+
+
         for (ClientRequest request : requests)
             client.send(request, now);
 
@@ -235,6 +247,7 @@ public class Sender implements Runnable {
         // otherwise if some partition already has some data accumulated but not ready yet,
         // the select time will be the time difference between now and its linger expiry time;
         // otherwise the select time will be the time difference between now and the metadata expiry time;
+        // 最重要进入这个方法
         this.client.poll(pollTimeout, now);
     }
 
@@ -343,7 +356,10 @@ public class Sender implements Runnable {
     private List<ClientRequest> createProduceRequests(Map<Integer, List<RecordBatch>> collated, long now) {
         List<ClientRequest> requests = new ArrayList<ClientRequest>(collated.size());
         for (Map.Entry<Integer, List<RecordBatch>> entry : collated.entrySet())
-            requests.add(produceRequest(now, entry.getKey(), acks, requestTimeout, entry.getValue()));
+            requests.add(
+                    // 封装 ClientRequest的方法要看一下，稍微有点绕
+                    produceRequest(now, entry.getKey(), acks, requestTimeout, entry.getValue())
+            );
         return requests;
     }
 

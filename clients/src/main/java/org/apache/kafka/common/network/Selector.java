@@ -94,6 +94,7 @@ public class Selector implements Selectable {
     private final List<NetworkReceive> completedReceives;
 
     //  每个broker接收到的，但是还没有被处理的响应
+    // staged : 暂存的意思
     private final Map<KafkaChannel, Deque<NetworkReceive>> stagedReceives;
 
     private final Set<SelectionKey> immediatelyConnectedKeys;
@@ -312,20 +313,31 @@ public class Selector implements Selectable {
 
         /* check ready keys */
         long startSelect = time.nanoseconds();
+
+        /**
+         *
+         */
         int readyKeys = select(timeout);
+
         long endSelect = time.nanoseconds();
         currentTimeNanos = endSelect;
         this.sensors.selectTime.record(endSelect - startSelect, time.milliseconds());
 
         if (readyKeys > 0 || !immediatelyConnectedKeys.isEmpty()) {
+            /**
+             * 获取到一堆的 SelectionKey 进行处理
+             */
             pollSelectionKeys(this.nioSelector.selectedKeys(), false);
             pollSelectionKeys(immediatelyConnectedKeys, true);
         }
 
+        // 暂存的 =》 Completed
         addToCompletedReceives();
 
         long endIo = time.nanoseconds();
         this.sensors.ioTime.record(endIo - endSelect, time.milliseconds());
+
+        // 根据lru的思想，把最近没有使用的一些连接关掉
         maybeCloseOldestConnection();
     }
 
@@ -334,6 +346,7 @@ public class Selector implements Selectable {
         while (iterator.hasNext()) {
             SelectionKey key = iterator.next();
             iterator.remove();
+            // 这里就从SelectionKey拿到之前 atach 的 KafkaChannel
             KafkaChannel channel = channel(key);
 
             // register all per-connection metrics at once
@@ -344,27 +357,38 @@ public class Selector implements Selectable {
 
                 /* complete any connections that have finished their handshake (either normally or immediately) */
                 if (isImmediatelyConnected || key.isConnectable()) {
-                    if (channel.finishConnect()) {
+
+                    if (channel.finishConnect()) { // 一路调用下去，最终是调用 socketChannel 的 finishConnect 方法
                         this.connected.add(channel.id());
                         this.sensors.connectionCreated.record();
                     } else
                         continue;
                 }
 
+
+                // 这一块可以忽略
                 /* if channel is not ready finish prepare */
                 if (channel.isConnected() && !channel.ready())
                     channel.prepare();
 
+                /**
+                 * 接收数据的过程
+                 */
                 /* if channel is ready read from any connections that have readable data */
                 if (channel.ready() && key.isReadable() && !hasStagedReceive(channel)) {
                     NetworkReceive networkReceive;
+                    // 针对一个broker的连接反复的读，
                     while ((networkReceive = channel.read()) != null)
                         addToStagedReceives(channel, networkReceive);
                 }
 
+                /**
+                 *  发送请求的过程
+                 */
                 /* if channel is ready write to any sockets that have space in their buffer and for which we have data */
                 if (channel.ready() && key.isWritable()) {
                     Send send = channel.write();
+
                     if (send != null) {
                         this.completedSends.add(send);
                         this.sensors.recordBytesSent(channel.id(), send.size());

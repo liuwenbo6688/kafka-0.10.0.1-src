@@ -249,7 +249,14 @@ public class NetworkClient implements KafkaClient {
 
     private void doSend(ClientRequest request, long now) {
         request.setSendTimeMs(now);
+        /**
+         * 暂存到 inFlightRequests 中
+         */
         this.inFlightRequests.add(request);
+
+        /**
+         * 放到 kafka channel 中暂存起来
+         */
         selector.send(request.request());
     }
 
@@ -265,19 +272,33 @@ public class NetworkClient implements KafkaClient {
     @Override
     public List<ClientResponse> poll(long timeout, long now) {
         long metadataTimeout = metadataUpdater.maybeUpdate(now);
+
         try {
+            /**
+             * 最最核心的poll方法
+             */
             this.selector.poll(Utils.min(timeout, metadataTimeout, requestTimeoutMs));
         } catch (IOException e) {
             log.error("Unexpected error during I/O", e);
         }
 
+
         // process completed actions
         long updatedNow = this.time.milliseconds();
         List<ClientResponse> responses = new ArrayList<>();
+
+        /**
+         * 处理发送出去的请求
+         */
         handleCompletedSends(responses, updatedNow);
+
         handleCompletedReceives(responses, updatedNow);
+
         handleDisconnections(responses, updatedNow);
+
+        // 处理连接的请求，就是把状态置为CONNECTED
         handleConnections();
+
         handleTimedOutRequests(responses, updatedNow);
 
         // invoke callbacks
@@ -438,7 +459,8 @@ public class NetworkClient implements KafkaClient {
         // if no response is expected then when the send is completed, return it
         for (Send send : this.selector.completedSends()) {
             ClientRequest request = this.inFlightRequests.lastSent(send.destination());
-            if (!request.expectResponse()) {
+
+            if (!request.expectResponse()) { // 不care响应，发送出去就可以了
                 this.inFlightRequests.completeLastSent(send.destination());
                 responses.add(new ClientResponse(request, now, false, null));
             }

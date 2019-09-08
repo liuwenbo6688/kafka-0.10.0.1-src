@@ -25,6 +25,8 @@ public class ByteBufferSend implements Send {
     private final String destination;
     private final int size;
     protected final ByteBuffer[] buffers;
+
+    // 这次发送剩余发送的数据有多少，初始化就是 buffers 的总大小
     private int remaining;
     private boolean pending = false;
 
@@ -43,7 +45,7 @@ public class ByteBufferSend implements Send {
     }
 
     @Override
-    public boolean completed() {
+    public boolean completed() { // 这个请求是否发送完毕
         return remaining <= 0 && !pending;
     }
 
@@ -54,7 +56,13 @@ public class ByteBufferSend implements Send {
 
     @Override
     public long writeTo(GatheringByteChannel channel) throws IOException {
+        /**
+         * 拆包问题解决方案：
+         *
+         */
+        // 调用 socketChannel.write 方法写出去
         long written = channel.write(buffers);
+
         if (written < 0)
             throw new EOFException("Wrote negative bytes to channel. This shouldn't happen.");
         remaining -= written;

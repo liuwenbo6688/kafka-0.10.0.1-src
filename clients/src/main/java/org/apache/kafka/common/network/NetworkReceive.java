@@ -27,7 +27,14 @@ public class NetworkReceive implements Receive {
     public final static int UNLIMITED = -1;
 
     private final String source;
+
+    // 4个字节的 ByteBuffer  为什么叫size，因为这4个字节代表数据的大小
+    /**
+     *  每个响应中间必须插入一个特殊的几个字节的分隔符，
+     *  一般来说用作分隔符很经典的就是在响应前先插入4个字节（integer）代表响应消息自己本身数据大小
+     */
     private final ByteBuffer size;
+
     private final int maxSize;
     private ByteBuffer buffer;
 
@@ -64,6 +71,7 @@ public class NetworkReceive implements Receive {
 
     @Override
     public boolean complete() {
+        // 解决拆包问题2
         return !size.hasRemaining() && !buffer.hasRemaining();
     }
 
@@ -76,17 +84,37 @@ public class NetworkReceive implements Receive {
     // This can go away after we get rid of BlockingChannel
     @Deprecated
     public long readFromReadableChannel(ReadableByteChannel channel) throws IOException {
+
+        /**
+         * 读取数据的时候，粘包的情况怎么处理 ： 很多响应粘在一块，如何区分
+         *
+         * 拆包问题，对方一条数据时分开发送的?
+         *
+         */
+
         int read = 0;
         if (size.hasRemaining()) {
+
+            // 读取4个字节的数字
             int bytesRead = channel.read(size);
+
             if (bytesRead < 0)
                 throw new EOFException();
+
             read += bytesRead;
+
+
+            // 拆包问题解决1：如果size没有读满，就不会进入if里面，buffer也就是空，也就不会读数据，直到size读完整
             if (!size.hasRemaining()) {
+                // 读满了就 rewind ，就是position
                 size.rewind();
+
+                // 这个 receiveSize 代表响应消息的大小
                 int receiveSize = size.getInt();
+
                 if (receiveSize < 0)
                     throw new InvalidReceiveException("Invalid receive (size = " + receiveSize + ")");
+
                 if (maxSize != UNLIMITED && receiveSize > maxSize)
                     throw new InvalidReceiveException("Invalid receive (size = " + receiveSize + " larger than " + maxSize + ")");
 

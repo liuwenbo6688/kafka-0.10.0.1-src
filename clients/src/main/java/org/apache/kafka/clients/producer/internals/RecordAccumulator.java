@@ -418,6 +418,10 @@ public final class RecordAccumulator {
      * @param maxSize The maximum number of bytes to drain
      * @param now The current unix time in milliseconds
      * @return A list of {@link RecordBatch} for each node specified with total size less than the requested maxSize.
+     *
+     * 聚合针对每个broker的 batch列表
+     *
+     * <broker id , List >
      */
     public Map<Integer, List<RecordBatch>> drain(Cluster cluster,
                                                  Set<Node> nodes,
@@ -440,6 +444,7 @@ public final class RecordAccumulator {
                 if (!muted.contains(tp)) {
                     Deque<RecordBatch> deque = getDeque(new TopicPartition(part.topic(), part.partition()));
                     if (deque != null) {
+
                         synchronized (deque) {
                             RecordBatch first = deque.peekFirst();
                             if (first != null) {
@@ -455,12 +460,14 @@ public final class RecordAccumulator {
                                         RecordBatch batch = deque.pollFirst();
                                         batch.records.close();
                                         size += batch.records.sizeInBytes();
+                                        //
                                         ready.add(batch);
                                         batch.drainedMs = now;
                                     }
                                 }
                             }
                         }
+
                     }
                 }
                 this.drainIndex = (this.drainIndex + 1) % parts.size();

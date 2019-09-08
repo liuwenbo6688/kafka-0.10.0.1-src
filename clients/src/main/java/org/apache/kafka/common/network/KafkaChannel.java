@@ -121,7 +121,11 @@ public class KafkaChannel {
     public void setSend(Send send) {
         if (this.send != null)
             throw new IllegalStateException("Attempt to begin a send operation with prior send operation still in progress.");
+        /**
+         * 缓存到 KafkaChannel 的 send 中
+         */
         this.send = send;
+        // 监听 OP_WRITE 事件
         this.transportLayer.addInterestOps(SelectionKey.OP_WRITE);
     }
 
@@ -132,18 +136,24 @@ public class KafkaChannel {
             receive = new NetworkReceive(maxReceiveSize, id);
         }
 
+        // 读取消息
         receive(receive);
+
+
+        // 拆包解决问题2：数据没有读完，就不会走这边的if代码段，下次还是可以继续往buffer里读数据的
         if (receive.complete()) {
             receive.payload().rewind();
             result = receive;
             receive = null;
         }
+
         return result;
     }
 
     public Send write() throws IOException {
         Send result = null;
         if (send != null && send(send)) {
+            // 发送完之后，send置为nul
             result = send;
             send = null;
         }
@@ -155,8 +165,13 @@ public class KafkaChannel {
     }
 
     private boolean send(Send send) throws IOException {
+        // ？？ 如果一次没有发送完，是怎么处理的？？？？
+
         send.writeTo(transportLayer);
+
+        // 全部发送完成
         if (send.completed())
+            // 发送完之后取消对 OP_WRITE 事件的监听
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
 
         return send.completed();
