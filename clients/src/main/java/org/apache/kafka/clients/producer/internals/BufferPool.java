@@ -277,6 +277,7 @@ public final class BufferPool {
 
     /**
      * The number of threads blocked waiting on memory
+     * 阻塞等待内存分配的线程数
      */
     public int queued() {
         lock.lock();

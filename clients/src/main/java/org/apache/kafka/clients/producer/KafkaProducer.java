@@ -328,6 +328,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             // 网络通信组件
             NetworkClient client = new NetworkClient(
                     // connections.max.idle.ms  和broker的一个连接最多空闲多久就要被回收
+                    // 创建 kafka的Selector
                     new Selector(config.getLong(ProducerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG), this.metrics, time, "producer", channelBuilder),
                     this.metadata,
                     clientId,

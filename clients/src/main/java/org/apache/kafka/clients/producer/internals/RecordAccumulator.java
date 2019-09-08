@@ -335,7 +335,8 @@ public final class RecordAccumulator {
      * </ol>
      */
     public ReadyCheckResult ready(Cluster cluster, long nowMs) {
-        Set<Node> readyNodes = new HashSet<>();
+        Set<Node> readyNodes = new HashSet<>(); // 可以发送数据的节点，一开始是空的
+
         long nextReadyCheckDelayMs = Long.MAX_VALUE;
         boolean unknownLeadersExist = false;
 
@@ -344,32 +345,39 @@ public final class RecordAccumulator {
         boolean exhausted = this.free.queued() > 0;
 
         for (Map.Entry<TopicPartition, Deque<RecordBatch>> entry : this.batches.entrySet()) {
+            // 拿到每个'分区'和对应的'队列'
             TopicPartition part = entry.getKey();
             Deque<RecordBatch> deque = entry.getValue();
 
             Node leader = cluster.leaderFor(part);
             if (leader == null) {
+                // 如果这个分区的leader不知道是谁， unknownLeadersExist字段置为true，后面会进行元数据拉取
                 unknownLeadersExist = true;
             } else if (!readyNodes.contains(leader) && !muted.contains(part)) {
-                synchronized (deque) {
+                synchronized (deque) { // 对deque的读和写都是加锁的，还是重量级的synchronized，保证线程的安全性
+
+                    // 每一轮循环只检查第一个batch
                     RecordBatch batch = deque.peekFirst();
+
                     if (batch != null) {
                         boolean backingOff = batch.attempts > 0 && batch.lastAttemptMs + retryBackoffMs > nowMs;
 
-                        long waitedTimeMs = nowMs - batch.lastAttemptMs;
-                        long timeToWaitMs = backingOff ? retryBackoffMs : lingerMs;
-                        long timeLeftMs = Math.max(timeToWaitMs - waitedTimeMs, 0);
+
+                        long waitedTimeMs = nowMs - batch.lastAttemptMs;// 已经等待的时间  ms
+                        long timeToWaitMs = backingOff ? retryBackoffMs : lingerMs;// 最多等待时间  ms
+                        long timeLeftMs = Math.max(timeToWaitMs - waitedTimeMs, 0);// 还能等待多少时间 ms
 
                         // Batch是否已满
                         // 如果说Dequeue里超过一个Batch了，说明这个peekFirst返回的Batch就一定是已经满的，
                         boolean full = deque.size() > 1 || batch.records.isFull();
 
                         boolean expired = waitedTimeMs >= timeToWaitMs;
+
                         // 综合算出是否可以发出
                         boolean sendable = full || expired || exhausted || closed || flushInProgress();
 
                         if (sendable && !backingOff) {
-                            //
+                            // 如果可以发送数据，找到leader，这个方法就是找哪些leader可以发送数据
                             readyNodes.add(leader);
                         } else {
                             // Note that this results in a conservative estimate since an un-sendable partition may have
@@ -382,7 +390,9 @@ public final class RecordAccumulator {
             }
         }
 
-        return new ReadyCheckResult(readyNodes, nextReadyCheckDelayMs, unknownLeadersExist);
+        return new ReadyCheckResult(readyNodes, // 可以发送数据的节点
+                nextReadyCheckDelayMs,
+                unknownLeadersExist);
     }
 
     /**
@@ -603,9 +613,9 @@ public final class RecordAccumulator {
         public final boolean unknownLeadersExist;
 
         public ReadyCheckResult(Set<Node> readyNodes, long nextReadyCheckDelayMs, boolean unknownLeadersExist) {
-            this.readyNodes = readyNodes;
+            this.readyNodes = readyNodes; // 可以发送数据的节点
             this.nextReadyCheckDelayMs = nextReadyCheckDelayMs;
-            this.unknownLeadersExist = unknownLeadersExist;
+            this.unknownLeadersExist = unknownLeadersExist; //是否有未知的leader
         }
     }
     

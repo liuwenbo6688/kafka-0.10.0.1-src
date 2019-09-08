@@ -74,20 +74,34 @@ import org.slf4j.LoggerFactory;
  * various getters. These are reset by each call to <code>poll()</code>.
  *
  * This class is not thread safe!
+ * 针对多个broker的网络连接，执行非阻塞的IO操作
+ * 这个class是 非线程安全 的！！！！！！
  */
 public class Selector implements Selectable {
 
     private static final Logger log = LoggerFactory.getLogger(Selector.class);
 
     private final java.nio.channels.Selector nioSelector;
+
+    // 保存了每个 broker id 到 Channel的映射关系
+    // KafkaChannel 封装了 SocketChannel
     private final Map<String, KafkaChannel> channels;
+
+    // 已经发送出去的请求
     private final List<Send> completedSends;
+
+    // 已经接收回来的响应
     private final List<NetworkReceive> completedReceives;
+
+    //  每个broker接收到的，但是还没有被处理的响应
     private final Map<KafkaChannel, Deque<NetworkReceive>> stagedReceives;
+
     private final Set<SelectionKey> immediatelyConnectedKeys;
+
     private final List<String> disconnected;
     private final List<String> connected;
     private final List<String> failedSends;
+
     private final Time time;
     private final SelectorMetrics sensors;
     private final String metricGrpPrefix;
@@ -105,17 +119,23 @@ public class Selector implements Selectable {
      * Create a new nioSelector
      */
     public Selector(int maxReceiveSize, long connectionMaxIdleMs, Metrics metrics, Time time, String metricGrpPrefix, Map<String, String> metricTags, boolean metricsPerConnection, ChannelBuilder channelBuilder) {
+
         try {
+            // 最核心的一点，kafka selector的底层就是封装了java NIO 的 selector
+            // 多路复用
             this.nioSelector = java.nio.channels.Selector.open();
         } catch (IOException e) {
             throw new KafkaException(e);
         }
+
         this.maxReceiveSize = maxReceiveSize;
         this.connectionsMaxIdleNanos = connectionMaxIdleMs * 1000 * 1000;
         this.time = time;
         this.metricGrpPrefix = metricGrpPrefix;
         this.metricTags = metricTags;
+
         this.channels = new HashMap<>();
+
         this.completedSends = new ArrayList<>();
         this.completedReceives = new ArrayList<>();
         this.stagedReceives = new HashMap<>();
@@ -148,12 +168,18 @@ public class Selector implements Selectable {
      * @param receiveBufferSize The receive buffer for the new connection
      * @throws IllegalStateException if there is already a connection for that id
      * @throws IOException if DNS resolution fails on the hostname or if the broker is down
+     *
+     * 这个方法只是初始化连接， 最终会在 poll(long) 方法中完成
      */
     @Override
     public void connect(String id, InetSocketAddress address, int sendBufferSize, int receiveBufferSize) throws IOException {
         if (this.channels.containsKey(id))
             throw new IllegalStateException("There is already a connection for id " + id);
 
+        /**
+         * 下面一段代码，就是标准的NIO写法，非常非常经典的
+         * 工业级的NIO  KeepAlive  SocketBuffer  TcpNoDelay 都是如何设置的
+         */
         SocketChannel socketChannel = SocketChannel.open();
         socketChannel.configureBlocking(false);
         Socket socket = socketChannel.socket();
@@ -165,6 +191,8 @@ public class Selector implements Selectable {
         socket.setTcpNoDelay(true);
         boolean connected;
         try {
+            // 如果设置为非阻塞的 configureBlocking(false)
+            // 那么connect方法的调用，会初始化一个非阻塞的请求连接
             connected = socketChannel.connect(address);
         } catch (UnresolvedAddressException e) {
             socketChannel.close();
@@ -173,12 +201,22 @@ public class Selector implements Selectable {
             socketChannel.close();
             throw e;
         }
+
+        // 直接注册到nioSelector，让他监视 OP_CONNECT 事件
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_CONNECT);
+
+
+        // 设计模式- 构造者模式
+        // 初始化KafkaChannel，放入缓存 channels 中
         KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);
+
+        // 又把KafkaChannel这东西 attach到SelectionKey上
+        // 后面可以用SelectionKey直接拿到 KafkaChannel
         key.attach(channel);
+
         this.channels.put(id, channel);
 
-        if (connected) {
+        if (connected) { // 如果立即就连接上了
             // OP_CONNECT won't trigger for immediately connected channels
             log.debug("Immediately connected to node {}", channel.id());
             immediatelyConnectedKeys.add(key);

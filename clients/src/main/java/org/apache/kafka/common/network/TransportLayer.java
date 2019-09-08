@@ -23,6 +23,10 @@ package org.apache.kafka.common.network;
  * and other network Channel implementations.
  * As NetworkClient replaces BlockingChannel and other implementations we will be using KafkaChannel as
  * a network I/O channel.
+ *
+ * TransportLayer 封装底层的 SocketChannel
+ *
+ * 实现类就看 PlaintextTransportLayer 就可以了
  */
 import java.io.IOException;
 import java.nio.channels.FileChannel;

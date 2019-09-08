@@ -63,10 +63,10 @@ public class NetworkClient implements KafkaClient {
     // 对同一个Broker同一时间最多容忍5个请求发送过去但是还没有收到响应，所以如果对一个Broker已经发送了5个请求(默认)，都没收到响应，此时就不可以继续发送了
     private final InFlightRequests inFlightRequests;
 
-    /* the socket send buffer size in bytes */
+    /* the socket send buffer size in bytes 默认128KB*/
     private final int socketSendBuffer;
 
-    /* the socket receive size buffer in bytes */
+    /* the socket receive size buffer in bytes  默认 32KB*/
     private final int socketReceiveBuffer;
 
     /* the client id used to identify this client in requests to the server */
@@ -142,7 +142,7 @@ public class NetworkClient implements KafkaClient {
 
     /**
      * Begin connecting to the given node, return true if we are already connected and ready to send to that node.
-     *
+     * 尝试和指定node建立连接
      * @param node The node to check
      * @param now The current timestamp
      * @return True if we are ready to send to the given node
@@ -152,13 +152,16 @@ public class NetworkClient implements KafkaClient {
         if (node.isEmpty())
             throw new IllegalArgumentException("Cannot connect to empty node " + node);
 
-        //
+        // 判断是否已经准备好发送数据的条件了
         if (isReady(node, now))
             return true;
 
+
         if (connectionStates.canConnect(node.idString(), now))
             // if we are interested in sending to a node and we don't have a connection to it, initiate one
+            // 如果可以初始化连接，就建立连接
             initiateConnect(node, now);
+
 
         return false;
     }
@@ -214,7 +217,9 @@ public class NetworkClient implements KafkaClient {
     public boolean isReady(Node node, long now) {
         // if we need to update our metadata now declare all requests unready to make metadata requests first
         // priority
-        return !metadataUpdater.isUpdateDue(now) && canSendRequest(node.idString());
+        return !metadataUpdater.isUpdateDue(now)
+                && canSendRequest(node.idString()) // 这是比较重要的判断
+                ;
     }
 
     /**
@@ -223,9 +228,9 @@ public class NetworkClient implements KafkaClient {
      * @param node The node
      */
     private boolean canSendRequest(String node) {
-        return connectionStates.isConnected(node)  // 条件1
-                && selector.isChannelReady(node)   // 条件2
-                && inFlightRequests.canSendMore(node);// 条件3
+        return connectionStates.isConnected(node)  // 条件1 节点连接缓存的状态是已经建立连接了
+                && selector.isChannelReady(node)   // 条件2 nio层面上，channel已经准备好了
+                && inFlightRequests.canSendMore(node);// 条件3  inflight数量的判断
     }
 
     /**
@@ -498,11 +503,16 @@ public class NetworkClient implements KafkaClient {
         String nodeConnectionId = node.idString();
         try {
             log.debug("Initiating connection to node {} at {}:{}.", node.id(), node.host(), node.port());
+
+            // 修改连接状态为 'CONNECTING'
             this.connectionStates.connecting(nodeConnectionId, now);
+
+            // 建立底层的网络连接   SocketChannel 注册到 jdk的selector上
             selector.connect(nodeConnectionId,
                              new InetSocketAddress(node.host(), node.port()),
                              this.socketSendBuffer,
                              this.socketReceiveBuffer);
+
         } catch (IOException e) {
             /* attempt failed, we'll try again after the backoff */
             connectionStates.disconnected(nodeConnectionId, now);
@@ -536,6 +546,8 @@ public class NetworkClient implements KafkaClient {
 
         @Override
         public boolean isUpdateDue(long now) {
+            // 当前不能处于元数据加载的过程中
+            // timeToNextUpdate ?
             return !this.metadataFetchInProgress && this.metadata.timeToNextUpdate(now) == 0;
         }
 

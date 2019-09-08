@@ -38,7 +38,7 @@ public final class RecordBatch {
     public volatile int attempts = 0;
     public final long createdMs;
     public long drainedMs;
-    public long lastAttemptMs;
+    public long lastAttemptMs;// 上一次重试时间，默认是创建出来的时间
     //
     public final MemoryRecords records;
     public final TopicPartition topicPartition;
