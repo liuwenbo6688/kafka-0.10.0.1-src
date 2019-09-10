@@ -86,6 +86,14 @@ final class InFlightRequests {
      */
     public boolean canSendMore(String node) {
         Deque<ClientRequest> queue = requests.get(node);
+
+        /**
+         * 可以发送请求的判断条件：
+         * 1 、 正在发送的请求队列是空的
+         * 2 、 发送中的请求数小于最大限制 并且 队列头的请求已经完成
+         *
+         */
+
         return queue == null || queue.isEmpty() ||
                (queue.peekFirst().request().completed() && queue.size() < this.maxInFlightRequestsPerConnection);
     }

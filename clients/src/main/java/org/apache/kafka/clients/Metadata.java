@@ -37,6 +37,7 @@ public final class Metadata {
 
     private static final Logger log = LoggerFactory.getLogger(Metadata.class);
 
+    // retry.backoff.ms
     private final long refreshBackoffMs;
     private final long metadataExpireMs;
     private int version;

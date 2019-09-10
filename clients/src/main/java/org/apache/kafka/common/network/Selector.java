@@ -331,7 +331,7 @@ public class Selector implements Selectable {
             pollSelectionKeys(immediatelyConnectedKeys, true);
         }
 
-        // 暂存的 =》 Completed
+        // 暂存的 转移到 completedReceives 列表中
         addToCompletedReceives();
 
         long endIo = time.nanoseconds();
@@ -379,6 +379,7 @@ public class Selector implements Selectable {
                     NetworkReceive networkReceive;
                     // 针对一个broker的连接反复的读，
                     while ((networkReceive = channel.read()) != null)
+                        // 读完一个完整的Receive就暂存起来
                         addToStagedReceives(channel, networkReceive);
                 }
 

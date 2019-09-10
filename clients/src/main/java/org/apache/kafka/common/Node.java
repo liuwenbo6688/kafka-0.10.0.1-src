@@ -20,8 +20,12 @@ public class Node {
 
     private static final Node NO_NODE = new Node(-1, "", -1);
 
+
+    // broker id
     private final int id;
     private final String idString;
+
+
     private final String host;
     private final int port;
     private final String rack;

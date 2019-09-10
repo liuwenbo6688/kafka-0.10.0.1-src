@@ -292,11 +292,20 @@ public class NetworkClient implements KafkaClient {
          */
         handleCompletedSends(responses, updatedNow);
 
+        /**
+         *
+         */
         handleCompletedReceives(responses, updatedNow);
 
+        /**
+         *
+         */
         handleDisconnections(responses, updatedNow);
 
-        // 处理连接的请求，就是把状态置为CONNECTED
+
+        /**
+         * 处理连接的请求，就是把状态置为CONNECTED
+         */
         handleConnections();
 
         handleTimedOutRequests(responses, updatedNow);
@@ -377,6 +386,9 @@ public class NetworkClient implements KafkaClient {
      * existing connection and from which we have disconnected within the reconnect backoff period.
      *
      * @return The node with the fewest in-flight requests.
+     *
+     * 通过 inFlightRequests
+     * 找到一个负载最小（请求最少）的节点
      */
     @Override
     public Node leastLoadedNode(long now) {
@@ -478,6 +490,8 @@ public class NetworkClient implements KafkaClient {
             String source = receive.source();
             ClientRequest req = inFlightRequests.completeNext(source);
             Struct body = parseResponse(receive.payload(), req.request().header());
+
+            // 处理元数据更新的请求
             if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body))
                 responses.add(new ClientResponse(req, now, false, body));
         }
@@ -550,6 +564,7 @@ public class NetworkClient implements KafkaClient {
         private final Metadata metadata;
 
         /* true iff there is a metadata request that has been sent and for which we have not yet received a response */
+        // true：如果有获取元数据的请求发送出去，但是还没有返回响应
         private boolean metadataFetchInProgress;
 
         /* the last timestamp when no broker node is available to connect */
@@ -586,7 +601,9 @@ public class NetworkClient implements KafkaClient {
             if (metadataTimeout == 0) {
                 // Beware that the behavior of this method and the computation of timeouts for poll() are
                 // highly dependent on the behavior of leastLoadedNode.
+                // 找到当前负载最小的broker
                 Node node = leastLoadedNode(now);
+                // 向负载最小的broker拉取元数据
                 maybeUpdate(now, node);
             }
 
@@ -668,16 +685,27 @@ public class NetworkClient implements KafkaClient {
             String nodeConnectionId = node.idString();
 
             if (canSendRequest(nodeConnectionId)) {
+
+
                 this.metadataFetchInProgress = true;
+
+                /**
+                 * 封装ClientRequest
+                 */
                 MetadataRequest metadataRequest;
                 if (metadata.needMetadataForAllTopics())
                     metadataRequest = MetadataRequest.allTopics();
                 else
                     metadataRequest = new MetadataRequest(new ArrayList<>(metadata.topics()));
+
                 ClientRequest clientRequest = request(now, nodeConnectionId, metadataRequest);
                 log.debug("Sending metadata request {} to node {}", metadataRequest, node.id());
+
+                // 发送请求
                 doSend(clientRequest, now);
+
             } else if (connectionStates.canConnect(nodeConnectionId, now)) {
+                // 没有连接或者需要重新连接到broker
                 // we don't have a connection to this node right now, make one
                 log.debug("Initialize connection to node {} for sending metadata request", node.id());
                 initiateConnect(node, now);
