@@ -621,8 +621,12 @@ public class Selector implements Selectable {
                 KafkaChannel channel = entry.getKey();
                 if (!channel.isMute()) {
                     Deque<NetworkReceive> deque = entry.getValue();
+
+                    // 只从暂存队列中取出(poll)一个响应，然后放到completedReceives队列中
+                    // 如果一个连接一次 OP_READ 读取出来多个响应消息的话，这里仅仅会把每个连接对应的第一个响应消息放到 completedReceives 里面去
                     NetworkReceive networkReceive = deque.poll();
                     this.completedReceives.add(networkReceive);
+
                     this.sensors.recordBytesReceived(channel.id(), networkReceive.payload().limit());
                     if (deque.isEmpty())
                         iter.remove();

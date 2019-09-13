@@ -38,7 +38,7 @@ public final class RecordBatch {
     public volatile int attempts = 0;
     public final long createdMs;
     public long drainedMs;
-    public long lastAttemptMs;// 上一次重试时间，默认是创建出来的时间
+    public long lastAttemptMs;// 上一次重试时间，默认是创建出来的时间（重新入队的时间）
     //
     public final MemoryRecords records;
     public final TopicPartition topicPartition;
@@ -112,6 +112,7 @@ public final class RecordBatch {
                                                                  thunk.future.serializedValueSize());
                     thunk.callback.onCompletion(metadata, null);
                 } else {
+                    // 如果超过重试次数，发现还是异常的，那就在回调方法里传入exception，我们要在回调里处理一下
                     thunk.callback.onCompletion(null, exception);
                 }
             } catch (Exception e) {

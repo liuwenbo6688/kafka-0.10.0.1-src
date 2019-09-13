@@ -215,6 +215,9 @@ public class Sender implements Runnable {
             }
         }
 
+        /**
+         * 超时处理，处理缓冲区积压的超时请求
+         */
         List<RecordBatch> expiredBatches = this.accumulator.abortExpiredBatches(this.requestTimeout, now);
         // update sensors
         for (RecordBatch expiredBatch : expiredBatches)
@@ -287,16 +290,20 @@ public class Sender implements Runnable {
             if (response.hasResponse()) {
                 ProduceResponse produceResponse = new ProduceResponse(response.responseBody());
                 for (Map.Entry<TopicPartition, ProduceResponse.PartitionResponse> entry : produceResponse.responses().entrySet()) {
+                    // 返回的响应里面，对每个Partition的batch都有更加具体的响应
                     TopicPartition tp = entry.getKey();
                     ProduceResponse.PartitionResponse partResp = entry.getValue();
+                    // 响应错误码
                     Errors error = Errors.forCode(partResp.errorCode);
                     RecordBatch batch = batches.get(tp);
+                    // ******
                     completeBatch(batch, error, partResp.baseOffset, partResp.timestamp, correlationId, now);
                 }
                 this.sensors.recordLatency(response.request().request().destination(), response.requestLatencyMs());
                 this.sensors.recordThrottleTime(response.request().request().destination(),
                                                 produceResponse.getThrottleTime());
             } else {
+                // acks=0 的情况
                 // this is the acks = 0 case, just complete all requests
                 for (RecordBatch batch : batches.values())
                     completeBatch(batch, Errors.NONE, -1L, Record.NO_TIMESTAMP, correlationId, now);
@@ -315,24 +322,31 @@ public class Sender implements Runnable {
      * @param now The current POSIX time stamp in milliseconds
      */
     private void completeBatch(RecordBatch batch, Errors error, long baseOffset, long timestamp, long correlationId, long now) {
-        if (error != Errors.NONE && canRetry(batch, error)) {
+        if (error != Errors.NONE && canRetry(batch, error) /*是否可以重试*/) {
+            // 请求的响应里有异常
             // retry
             log.warn("Got error produce response with correlation id {} on topic-partition {}, retrying ({} attempts left). Error: {}",
                      correlationId,
                      batch.topicPartition,
                      this.retries - batch.attempts - 1,
                      error);
+            // 非常关键的逻辑： 重新放入缓冲区
             this.accumulator.reenqueue(batch, now);
             this.sensors.recordRetries(batch.topicPartition.topic(), batch.recordCount);
         } else {
+            // 正常情况
             RuntimeException exception;
             if (error == Errors.TOPIC_AUTHORIZATION_FAILED)
                 exception = new TopicAuthorizationException(batch.topicPartition.topic());
             else
                 exception = error.exception();
             // tell the user the result of their request
+            // 正常情况下回调每条消息的回调函数
             batch.done(baseOffset, timestamp, exception);
+
+            // 释放内存空间
             this.accumulator.deallocate(batch);
+
             if (error != Errors.NONE)
                 this.sensors.recordErrors(batch.topicPartition.topic(), batch.recordCount);
         }
@@ -380,6 +394,7 @@ public class Sender implements Runnable {
                                            request.toStruct());
         RequestCompletionHandler callback = new RequestCompletionHandler() {
             public void onComplete(ClientResponse response) {
+                // 回调函数
                 handleProduceResponse(response, recordsByPartition, time.milliseconds());
             }
         };

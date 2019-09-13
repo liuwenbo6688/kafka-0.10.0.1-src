@@ -280,6 +280,7 @@ public final class RecordAccumulator {
                         RecordBatch batch = batchIterator.next();
                         boolean isFull = batch != lastBatch || batch.records.isFull();
                         // check if the batch is expired
+                        // maybeExpire 判断超时逻辑
                         if (batch.maybeExpire(requestTimeout, retryBackoffMs, now, this.lingerMs, isFull)) {
                             expiredBatches.add(batch);
                             count++;
@@ -301,14 +302,19 @@ public final class RecordAccumulator {
 
     /**
      * Re-enqueue the given record batch in the accumulator to retry
+     * 重新入队缓冲区
      */
     public void reenqueue(RecordBatch batch, long now) {
+        // 更新几个标志字段
         batch.attempts++;
         batch.lastAttemptMs = now;
         batch.lastAppendTime = now;
         batch.setRetry();
+
+
         Deque<RecordBatch> deque = getOrCreateDeque(batch.topicPartition);
         synchronized (deque) {
+            // 放到队列头部
             deque.addFirst(batch);
         }
     }
@@ -360,6 +366,11 @@ public final class RecordAccumulator {
                     RecordBatch batch = deque.peekFirst();
 
                     if (batch != null) {
+
+                        /**
+                         * 有重试（attempts > 0），并且 上次重试时间 + 重试间隔 > 当前时间，意思就是还不能进行重新发送
+                         * 所以叫 backing  off
+                         */
                         boolean backingOff = batch.attempts > 0 && batch.lastAttemptMs + retryBackoffMs > nowMs;
 
 

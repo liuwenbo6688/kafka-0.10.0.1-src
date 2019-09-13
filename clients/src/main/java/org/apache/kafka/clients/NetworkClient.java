@@ -293,12 +293,12 @@ public class NetworkClient implements KafkaClient {
         handleCompletedSends(responses, updatedNow);
 
         /**
-         *
+         * 对于非元数据更新的响应，仅仅是解析下响应，然后放到 responses 列表中
          */
         handleCompletedReceives(responses, updatedNow);
 
         /**
-         *
+         * 处理断开连接
          */
         handleDisconnections(responses, updatedNow);
 
@@ -308,12 +308,21 @@ public class NetworkClient implements KafkaClient {
          */
         handleConnections();
 
+
+        /**
+         * 处理超时机制，已经发送出去的请求的超时判断
+         */
         handleTimedOutRequests(responses, updatedNow);
 
+        // 针对响应调用回调函数
+        //
         // invoke callbacks
         for (ClientResponse response : responses) {
             if (response.request().hasCallback()) {
                 try {
+                    /**
+                     * 针对producer的请求回调函数在 Sender#produceRequest 方法中
+                     */
                     response.request().callback().onComplete(response);
                 } catch (Exception e) {
                     log.error("Uncaught error in request completion:", e);
@@ -420,6 +429,8 @@ public class NetworkClient implements KafkaClient {
         short apiKey = requestHeader.apiKey();
         short apiVer = requestHeader.apiVersion();
         Struct responseBody = ProtoUtils.responseSchema(apiKey, apiVer).read(responseBuffer);
+
+        // 保证请求 和 响应是对应的， 通过correlationId
         correlate(requestHeader, responseHeader);
         return responseBody;
     }
@@ -487,12 +498,15 @@ public class NetworkClient implements KafkaClient {
      */
     private void handleCompletedReceives(List<ClientResponse> responses, long now) {
         for (NetworkReceive receive : this.selector.completedReceives()) {
-            String source = receive.source();
+            String source = receive.source();// broker id
             ClientRequest req = inFlightRequests.completeNext(source);
+            // 解析响应
             Struct body = parseResponse(receive.payload(), req.request().header());
 
-            // 处理元数据更新的请求
-            if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body))
+
+            if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body) /*处理元数据更新的请求*/)
+                // 如果获取的不是元数据，封装ClientResponse 放到responses列表中
+                // 到这只是解析响应，还没有处理
                 responses.add(new ClientResponse(req, now, false, body));
         }
     }
@@ -528,6 +542,7 @@ public class NetworkClient implements KafkaClient {
      */
     private static void correlate(RequestHeader requestHeader, ResponseHeader responseHeader) {
         if (requestHeader.correlationId() != responseHeader.correlationId())
+            // 请求的correlationId 和 响应的correlationId 一定是相同的
             throw new IllegalStateException("Correlation id for response (" + responseHeader.correlationId()
                     + ") does not match request (" + requestHeader.correlationId() + ")");
     }
