@@ -42,6 +42,10 @@ import scala.collection._
 import JavaConverters._
 import scala.util.control.{ControlThrowable, NonFatal}
 
+
+
+
+//===============================================SocketServer start==================================================================================
 /**
  * An NIO socket server. The threading model is
  *   1 Acceptor thread that handles new connections
@@ -55,6 +59,7 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
   // num.network.threads
   private val numProcessorThreads = config.numNetworkThreads
 
+  // queued.max.requests
   private val maxQueuedRequests = config.queuedMaxRequests
   private val totalProcessorThreads = numProcessorThreads * endpoints.size
 
@@ -81,9 +86,12 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
   def startup() {
     this.synchronized {
 
+      // 每个ip可以和broker建立的最大连接数
       connectionQuotas = new ConnectionQuotas(maxConnectionsPerIp, maxConnectionsPerIpOverrides)
 
+      // socket.send.buffer.bytes
       val sendBufferSize = config.socketSendBufferBytes
+      // socket.receive.buffer.bytes
       val recvBufferSize = config.socketReceiveBufferBytes
       // broker.id
       val brokerId = config.brokerId
@@ -169,6 +177,11 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
 
 }
 
+//===========================SocketServer end======================================================================================================
+
+
+
+//===========================AbstractServerThread start======================================================================================================
 /**
  * A base class with some helper variables and methods
  */
@@ -237,6 +250,9 @@ private[kafka] abstract class AbstractServerThread(connectionQuotas: ConnectionQ
     }
   }
 }
+//===========================AbstractServerThread end======================================================================================================
+
+//===============================Acceptor start==================================================================================================
 
 /**
  * Thread that accepts and configures new connections. There is one of these per endpoint.
@@ -249,6 +265,8 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                               connectionQuotas: ConnectionQuotas) extends AbstractServerThread(connectionQuotas) with KafkaMetricsGroup {
 
   private val nioSelector = NSelector.open()
+
+  //java nio ServerSocketChannel
   val serverChannel = openServerSocket(endPoint.host, endPoint.port)
 
   this.synchronized {
@@ -267,6 +285,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
       var currentProcessor = 0
       while (isRunning) {
         try {
+          // 500ms ，看有没有新的连接请求进来 OP_ACCEPT
           val ready = nioSelector.select(500)
           if (ready > 0) {
             val keys = nioSelector.selectedKeys()
@@ -276,6 +295,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                 val key = iter.next
                 iter.remove()
                 if (key.isAcceptable)
+                  //
                   accept(key, processors(currentProcessor))
                 else
                   throw new IllegalStateException("Unrecognized key state for acceptor thread.")
@@ -329,6 +349,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
 
   /*
    * Accept a new connection
+   * 接收一个新的连接
    */
   def accept(key: SelectionKey, processor: Processor) {
     val serverSocketChannel = key.channel().asInstanceOf[ServerSocketChannel]
@@ -362,6 +383,10 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
 
 }
 
+//============================================Acceptor end=====================================================================================
+
+
+//==========================================Processor start=======================================================================================
 /**
  * Thread that processes all requests from a single connection. There are N of these running in parallel
  * each of which has its own selector
@@ -418,16 +443,25 @@ private[kafka] class Processor(val id: Int,
     startupComplete()
     while (isRunning) {
       try {
+
+        // 只要这个while循环到这里,就一定会把队列里 等待的连接(newConnections) 进行处理
         // setup any new connections that have been queued up
         configureNewConnections()
+
         // register any new responses for writing
+        // 处理新的响应结果
         processNewResponses()
+
+        // 和客户端poll是一样的，Kakfa Selector
         poll()
 
-        //
+        // 对已经接收完毕的请求进行处理
         processCompletedReceives()
 
+        //
         processCompletedSends()
+
+        //
         processDisconnected()
       } catch {
         // We catch all the throwables here to prevent the processor thread from exiting. We do this because
@@ -479,6 +513,7 @@ private[kafka] class Processor(val id: Int,
       response.request.updateRequestMetrics()
     }
     else {
+      // 发送响应结果 response
       selector.send(response.responseSend)
       inflightResponses += (response.request.connectionId -> response)
     }
@@ -501,8 +536,10 @@ private[kafka] class Processor(val id: Int,
         val channel = selector.channel(receive.source)
         val session = RequestChannel.Session(new KafkaPrincipal(KafkaPrincipal.USER_TYPE, channel.principal.getName),
           channel.socketAddress)
-        val req = RequestChannel.Request(processor = id, connectionId = receive.source, session = session, buffer = receive.payload, startTimeMs = time.milliseconds, securityProtocol = protocol)
-        //
+        val req = RequestChannel.Request(processor = id, connectionId = receive.source, session = session,
+          buffer = receive.payload,  // 请求的 ByteBuffer
+          startTimeMs = time.milliseconds, securityProtocol = protocol)
+        // 放到requestChannel的 请求队列 中去
         requestChannel.sendRequest(req)
         selector.mute(receive.source)
       } catch {
@@ -548,6 +585,7 @@ private[kafka] class Processor(val id: Int,
    */
   private def configureNewConnections() {
     while (!newConnections.isEmpty) {
+      // 从队列里把请求poll出来
       val channel = newConnections.poll()
       try {
         debug(s"Processor $id listening to new connection from ${channel.socket.getRemoteSocketAddress}")
@@ -556,7 +594,11 @@ private[kafka] class Processor(val id: Int,
         val remoteHost = channel.socket().getInetAddress.getHostAddress
         val remotePort = channel.socket().getPort
         val connectionId = ConnectionId(localHost, localPort, remoteHost, remotePort).toString
+
+        //  注册到 kafka的 selector
+        //  监听 OP_READ
         selector.register(connectionId, channel)
+
       } catch {
         // We explicitly catch all non fatal exceptions and close the socket to avoid a socket leak. The other
         // throwables will be caught in processor and logged as uncaught exceptions.
@@ -589,6 +631,12 @@ private[kafka] class Processor(val id: Int,
   def wakeup = selector.wakeup()
 
 }
+//===========================================================Processor  end======================================================================
+
+
+
+
+
 
 class ConnectionQuotas(val defaultMax: Int, overrideQuotas: Map[String, Int]) {
 

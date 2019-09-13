@@ -176,12 +176,13 @@ object RequestChannel extends Logging {
   case object CloseConnectionAction extends ResponseAction
 }
 
-class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMetricsGroup {
+class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requests*/) extends KafkaMetricsGroup {
   private var responseListeners: List[(Int) => Unit] = Nil
 
-  // 请求队列
+  // 请求队列, 这是一个阻塞队列
   private val requestQueue = new ArrayBlockingQueue[RequestChannel.Request](queueSize)
 
+  // 响应结果队列
   private val responseQueues = new Array[BlockingQueue[RequestChannel.Response]](numProcessors)
   for(i <- 0 until numProcessors)
     responseQueues(i) = new LinkedBlockingQueue[RequestChannel.Response]()

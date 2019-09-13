@@ -315,7 +315,7 @@ public class Selector implements Selectable {
         long startSelect = time.nanoseconds();
 
         /**
-         *
+         * 调用 nioSelector的select方法
          */
         int readyKeys = select(timeout);
 

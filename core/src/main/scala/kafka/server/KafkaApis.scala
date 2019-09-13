@@ -49,6 +49,7 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse
 
 /**
  * Logic to handle the various Kafka requests
+  * 对各种各样的kafka请求的逻辑处理
  */
 class KafkaApis(val requestChannel: RequestChannel,
                 val replicaManager: ReplicaManager,
@@ -333,8 +334,11 @@ class KafkaApis(val requestChannel: RequestChannel,
       case (topicPartition, _) => authorize(request.session, Write, new Resource(Topic, topicPartition.topic))
     }
 
+
+    // ----------------------sendResponseCallback start----------------------------------------------------------------
     // the callback for sending a produce response
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]) {
+      // responseStatus 对应每个分区的结果
 
       val mergedResponseStatus = responseStatus ++ unauthorizedRequestInfo.mapValues(_ =>
         new PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED.code, -1, Message.NoTimestamp))
@@ -373,6 +377,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         } else {
           val respHeader = new ResponseHeader(request.header.correlationId)
           val respBody = request.header.apiVersion match {
+              // mergedResponseStatus 是 Map<TopicPartition, PartitionResponse>
             case 0 => new ProduceResponse(mergedResponseStatus.asJava)
             case version@(1 | 2) => new ProduceResponse(mergedResponseStatus.asJava, delayTimeMs, version)
             // This case shouldn't happen unless a new version of ProducerRequest is added without
@@ -393,6 +398,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         produceResponseCallback)
     }
 
+    // ----------------------sendResponseCallback end----------------------------------------------------------------
+
     if (authorizedRequestInfo.isEmpty)
       sendResponseCallback(Map.empty)
     else {
@@ -404,6 +411,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case (topicPartition, buffer) => (topicPartition, new ByteBufferMessageSet(buffer))
       }
 
+      // 调用 replicaManager将消息写入副本中，leader 和follower都是replica
       // call the replica manager to append messages to the replicas
       replicaManager.appendMessages(
         produceRequest.timeout.toLong,

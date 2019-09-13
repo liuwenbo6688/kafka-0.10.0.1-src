@@ -26,7 +26,7 @@ import org.apache.kafka.common.utils.Utils
 
 /**
  * A thread that answers kafka requests.
-  * 处理请求的线程  ， 也是一个Runnable
+  * 处理请求的工作线程  ， 也是一个Runnable
  */
 class KafkaRequestHandler(id: Int,
                           brokerId: Int,
