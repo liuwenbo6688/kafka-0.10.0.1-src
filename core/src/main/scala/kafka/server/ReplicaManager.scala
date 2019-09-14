@@ -100,32 +100,45 @@ object ReplicaManager {
   val IsrChangePropagationInterval = 60000L
 }
 
+// 总结：
+// 1、partition + logManager
+// 目录组织机制、磁盘文件组织机制、数据文件+索引、数据格式、顺序写磁盘文件、如何利用os cache 、定时刷新os cache、定时清理磁盘的文件
+// 2 、高水位信息 + replicaFetcherManager 、 isr列表信息
 class ReplicaManager(val config: KafkaConfig,
                      metrics: Metrics,
                      time: Time,
                      jTime: JTime,
                      val zkUtils: ZkUtils,
                      scheduler: Scheduler,
-                     val logManager: LogManager,
+                     val logManager: LogManager, // 重要组件
                      val isShuttingDown: AtomicBoolean,
                      threadNamePrefix: Option[String] = None) extends Logging with KafkaMetricsGroup {
   /* epoch of the controller that last changed the leader */
   @volatile var controllerEpoch: Int = KafkaController.InitialControllerEpoch - 1
   private val localBrokerId = config.brokerId
+
+  //  保存当前这台 broker 上存储的所有的 partition
   private val allPartitions = new Pool[(String, Int), Partition](valueFactory = Some { case (t, p) =>
     new Partition(t, p, time, this)
   })
+
   private val replicaStateChangeLock = new Object
 
   //
   val replicaFetcherManager = new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix)
 
+  // 高水位
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
   val highWatermarkCheckpoints = config.logDirs.map(dir => (new File(dir).getAbsolutePath, new OffsetCheckpoint(new File(dir, ReplicaManager.HighWatermarkFilename)))).toMap
   private var hwThreadInitialized = false
+
   this.logIdent = "[Replica Manager on Broker " + localBrokerId + "]: "
   val stateChangeLogger = KafkaController.stateChangeLogger
+
+  // isr leader肯定在里面，follower不一定
+  // 必须 follower跟上了leader的数据同步，没有落后太多，此时才能在isr列表中
   private val isrChangeSet: mutable.Set[TopicAndPartition] = new mutable.HashSet[TopicAndPartition]()
+
   private val lastIsrChangeMs = new AtomicLong(System.currentTimeMillis())
   private val lastIsrPropagationMs = new AtomicLong(System.currentTimeMillis())
 
@@ -329,9 +342,14 @@ class ReplicaManager(val config: KafkaConfig,
                      messagesPerPartition: Map[TopicPartition, MessageSet],
                      responseCallback: Map[TopicPartition, PartitionResponse] => Unit) {
 
-    if (isValidRequiredAcks(requiredAcks)) {
+    if (isValidRequiredAcks(requiredAcks) ) {//是否是有效的acks？？？？
       val sTime = SystemTime.milliseconds
+
+      // 直接调用 appendToLocalLog 将数据写入每个分区的磁盘文件中
+      // 然后会获取到本地磁盘文件写入的每个结果
       val localProduceResults = appendToLocalLog(internalTopicsAllowed, messagesPerPartition, requiredAcks)
+
+
       debug("Produce to local log in %d ms".format(SystemTime.milliseconds - sTime))
 
       val produceStatus = localProduceResults.map { case (topicPartition, result) =>
@@ -341,6 +359,7 @@ class ReplicaManager(val config: KafkaConfig,
                   new PartitionResponse(result.errorCode, result.info.firstOffset, result.info.timestamp)) // response status
       }
 
+      // 是否需要等follower同步成功，
       if (delayedRequestRequired(requiredAcks, messagesPerPartition, localProduceResults)) {
         // create delayed produce operation
         val produceMetadata = ProduceMetadata(requiredAcks, produceStatus)
@@ -385,6 +404,11 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   private def isValidRequiredAcks(requiredAcks: Short): Boolean = {
+    // 当前acks只支持: 3个值
+    // -1
+    // 1
+    // 0
+    // KafkaProducer.parseAcks
     requiredAcks == -1 || requiredAcks == 1 || requiredAcks == 0
   }
 
@@ -395,21 +419,27 @@ class ReplicaManager(val config: KafkaConfig,
                                messagesPerPartition: Map[TopicPartition, MessageSet],
                                requiredAcks: Short): Map[TopicPartition, LogAppendResult] = {
     trace("Append [%s] to local log ".format(messagesPerPartition))
+
+    // messagesPerPartition 进行map
     messagesPerPartition.map { case (topicPartition, messages) =>
       BrokerTopicStats.getBrokerTopicStats(topicPartition.topic).totalProduceRequestRate.mark()
       BrokerTopicStats.getBrokerAllTopicsStats().totalProduceRequestRate.mark()
 
       // reject appending to internal topics if it is not allowed
       if (Topic.isInternal(topicPartition.topic) && !internalTopicsAllowed) {
+        // 内部topic,  __consumer_offsets,内部使用
         (topicPartition, LogAppendResult(
           LogAppendInfo.UnknownLogAppendInfo,
           Some(new InvalidTopicException("Cannot append to internal topic %s".format(topicPartition.topic)))))
       } else {
+        //
         try {
           val partitionOpt = getPartition(topicPartition.topic, topicPartition.partition)
           val info = partitionOpt match {
             case Some(partition) =>
+              // 调用 partition的方法，将属于partition的数据写入分区对应的磁盘文件
               partition.appendMessagesToLeader(messages.asInstanceOf[ByteBufferMessageSet], requiredAcks)
+
             case None => throw new UnknownTopicOrPartitionException("Partition %s doesn't exist on %d"
               .format(topicPartition, localBrokerId))
           }
@@ -430,6 +460,7 @@ class ReplicaManager(val config: KafkaConfig,
             .format(messages.sizeInBytes, topicPartition.topic, topicPartition.partition, info.firstOffset, info.lastOffset))
           (topicPartition, LogAppendResult(info))
         } catch {
+          // 异常的捕获
           // NOTE: Failed produce requests metric is not incremented for known exceptions
           // it is supposed to indicate un-expected failures of a broker in handling a produce request
           case e: KafkaStorageException =>

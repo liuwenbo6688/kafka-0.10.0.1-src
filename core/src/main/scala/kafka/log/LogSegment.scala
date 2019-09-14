@@ -54,7 +54,14 @@ class LogSegment(val log: FileMessageSet,
   private var bytesSinceLastIndexEntry = 0
 
   def this(dir: File, startOffset: Long, indexIntervalBytes: Int, maxIndexSize: Int, rollJitterMs: Long, time: Time, fileAlreadyExists: Boolean = false, initFileSize: Int = 0, preallocate: Boolean = false) =
-    this(new FileMessageSet(file = Log.logFilename(dir, startOffset), fileAlreadyExists = fileAlreadyExists, initFileSize = initFileSize, preallocate = preallocate),
+    this(
+      // FileMessageSet
+      new FileMessageSet(
+        file = Log.logFilename(dir, startOffset),
+        fileAlreadyExists = fileAlreadyExists,
+        initFileSize = initFileSize,
+        preallocate = preallocate),
+
          new OffsetIndex(Log.indexFilename(dir, startOffset), baseOffset = startOffset, maxIndexSize = maxIndexSize),
          startOffset,
          indexIntervalBytes,
@@ -77,13 +84,24 @@ class LogSegment(val log: FileMessageSet,
   def append(offset: Long, messages: ByteBufferMessageSet) {
     if (messages.sizeInBytes > 0) {
       trace("Inserting %d bytes at offset %d at position %d".format(messages.sizeInBytes, offset, log.sizeInBytes()))
+
       // append an entry to the index (if needed)
+      // 先写index文件  index本质是一个稀疏索引
+      // indexIntervalBytes 默认 4096，也就是每写入4096条数据写入一条索引
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
+
+        /**
+          *
+          */
         index.append(offset, log.sizeInBytes())
         this.bytesSinceLastIndexEntry = 0
       }
+
+
+      // 这就是顺序写入数据
       // append the messages
       log.append(messages)
+
       this.bytesSinceLastIndexEntry += messages.sizeInBytes
     }
   }
@@ -249,6 +267,7 @@ class LogSegment(val log: FileMessageSet,
   @threadsafe
   def flush() {
     LogFlushStats.logFlushTimer.time {
+      // 刷新到磁盘，其实就是 force
       log.flush()
       index.flush()
     }

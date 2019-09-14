@@ -30,7 +30,21 @@ import java.util.concurrent.{ExecutionException, ExecutorService, Executors, Fut
 /**
  * The entry point to the kafka log management subsystem. The log manager is responsible for log creation, retrieval, and cleaning.
  * All read and write operations are delegated to the individual log instances.
- * 
+ *
+  * 这里的Log是什么呢？
+  * 每个Partition的leader或者follower，就是一个 replica
+  * 每个Partition Replica对应了一个Log
+  *
+  *
+  * 如果要往 Partition Leader中写入一批数据，那么就往Log中写入数据
+  * 但是每个Log在底层是对应磁盘目录的，在目录里拆分成了多个Log Segment，日志段
+  * 每个日志段有一个磁盘文件
+  * 每个磁盘文件会对应一个 .log 和 .index 文件，.log存放数据，.index存放稀疏索引
+  *
+  * 顺序写、os cache、定时os cache flush
+  *
+  * logCleaner定时删除磁盘文件
+  *
  * The log manager maintains logs in one or more directories. New logs are created in the data directory
  * with the fewest logs. No attempt is made to move partitions after the fact or balance based on
  * size or I/O rate.
@@ -54,11 +68,21 @@ class LogManager(val logDirs: Array[File], // log.dirs
   // 30 秒
   val InitialTaskDelayMs = 30*1000
   private val logCreationOrDeletionLock = new Object
+
+  /**
+    *  每个分区对应一个 Log
+    */
   private val logs = new Pool[TopicAndPartition, Log]()
 
   createAndValidateLogDirs(logDirs)
   private val dirLocks = lockLogDirs(logDirs)
   private val recoveryPointCheckpoints = logDirs.map(dir => (dir, new OffsetCheckpoint(new File(dir, RecoveryPointCheckpointFile)))).toMap
+
+  /**
+    * 这个步骤一定是扫描你配置的那个logDir下的目录和文件
+    * 根据目录和文件的格式，加载出来，当前自己本地存储了哪些分区的Log
+    * 把每个Log的信息实例化成对象，放在内存里
+    */
   loadLogs()
 
   // public, so we can access this from kafka.admin.DeleteTopicTest
@@ -106,6 +130,7 @@ class LogManager(val logDirs: Array[File], // log.dirs
   
   /**
    * Recover and load all logs in the given data directories
+    *
    */
   private def loadLogs(): Unit = {
     info("Loading logs.")
@@ -146,6 +171,7 @@ class LogManager(val logDirs: Array[File], // log.dirs
         CoreUtils.runnable {
           debug("Loading log '" + logDir.getName + "'")
 
+          // topic-partitionId，根据这种格式解析目录
           val topicPartition = Log.parseTopicPartitionName(logDir)
           val config = topicConfigs.getOrElse(topicPartition.topic, defaultConfig)
           val logRecoveryPoint = recoveryPoints.getOrElse(topicPartition, 0L)

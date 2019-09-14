@@ -77,7 +77,7 @@ case class LogAppendInfo(var firstOffset: Long,
 @threadsafe
 class Log(val dir: File,
           @volatile var config: LogConfig,
-          @volatile var recoveryPoint: Long = 0L,
+          @volatile var recoveryPoint: Long = 0L, // 代表已经flush到磁盘的offset
           scheduler: Scheduler,
           time: Time = SystemTime) extends Logging with KafkaMetricsGroup {
 
@@ -100,6 +100,7 @@ class Log(val dir: File,
   private val segments: ConcurrentNavigableMap[java.lang.Long, LogSegment] = new ConcurrentSkipListMap[java.lang.Long, LogSegment]
   loadSegments()
 
+  // 这个数据结构就代表了 LEO
   /* Calculate the offset of the next message */
   @volatile var nextOffsetMetadata = new LogOffsetMetadata(activeSegment.nextOffset(), activeSegment.baseOffset, activeSegment.size.toInt)
 
@@ -328,6 +329,7 @@ class Log(val dir: File,
 
     try {
       // they are valid, insert them in the log
+      // 对于一个分区目录而言，在写入数据的时候都是并发控制的
       lock synchronized {
 
         if (assignOffsets) {
@@ -383,14 +385,18 @@ class Log(val dir: File,
         val segment = maybeRoll(validMessages.sizeInBytes)
 
         // now append to the log
+        // 通过 segment 写数据
         segment.append(appendInfo.firstOffset, validMessages)
 
         // increment the log end offset
+        // 更新 LEO为最后的offset+1
         updateLogEndOffset(appendInfo.lastOffset + 1)
 
         trace("Appended message set to log %s with first offset: %d, next offset: %d, and messages: %s"
           .format(this.name, appendInfo.firstOffset, nextOffsetMetadata.messageOffset, validMessages))
 
+        // 固定的时间频率刷新到磁盘上
+        // flush.messages 自己配置的，默认值是maxvalue
         if (unflushedMessages >= config.flushInterval)
           flush()
 
@@ -620,6 +626,7 @@ class Log(val dir: File,
     if (segment.size > config.segmentSize - messagesSize ||
         segment.size > 0 && time.milliseconds - segment.created > config.segmentMs - segment.rollJitterMs ||
         segment.index.isFull) {
+      // 需要新滚一个日志段
       debug("Rolling new log segment in %s (log_size = %d/%d, index_size = %d/%d, age_ms = %d/%d)."
             .format(name,
                     segment.size,
@@ -628,6 +635,7 @@ class Log(val dir: File,
                     segment.index.maxEntries,
                     time.milliseconds - segment.created,
                     config.segmentMs - segment.rollJitterMs))
+      //
       roll()
     } else {
       segment
@@ -642,7 +650,12 @@ class Log(val dir: File,
   def roll(): LogSegment = {
     val start = time.nanoseconds
     lock synchronized {
+      // LEO=0,写入一条数据，此时LEO=1,但是写入的第一条数据的offset=0
+      // LEO永远大于最后一条数据的offset
       val newOffset = logEndOffset
+
+      // 日志文件 + 索引文件
+      // 在分区目录下，构建一个新的文件，用LEO作为文件名就可以了
       val logFile = logFilename(dir, newOffset)
       val indexFile = indexFilename(dir, newOffset)
       for(file <- List(logFile, indexFile); if file.exists) {
@@ -657,6 +670,7 @@ class Log(val dir: File,
           entry.getValue.log.trim()
         }
       }
+
       val segment = new LogSegment(dir,
                                    startOffset = newOffset,
                                    indexIntervalBytes = config.indexInterval,
@@ -683,6 +697,8 @@ class Log(val dir: File,
 
   /**
    * The number of messages appended to the log since the last flush
+    * recoveryPoint 代表已经刷新到磁盘的offset
+    *
    */
   def unflushedMessages() = this.logEndOffset - this.recoveryPoint
 
@@ -702,10 +718,13 @@ class Log(val dir: File,
           time.milliseconds + " unflushed = " + unflushedMessages)
     //
     for(segment <- logSegments(this.recoveryPoint, offset))
+      //
       segment.flush()
 
     lock synchronized {
       if(offset > this.recoveryPoint) {
+        // 刷完之后更新  recoveryPoint
+        // 所以 recoveryPoint代表了上一次刷新的offset
         this.recoveryPoint = offset
         lastflushedTime.set(time.milliseconds)
       }

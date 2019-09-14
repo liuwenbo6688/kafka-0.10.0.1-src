@@ -18,6 +18,7 @@
 package kafka.message
 
 
+// Message
 case class MessageAndOffset(message: Message, offset: Long) {
   
   /**

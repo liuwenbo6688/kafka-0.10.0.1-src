@@ -68,6 +68,7 @@ case class MagicAndTimestamp(magic: Byte, timestamp: Long)
  * 4 byte size containing an integer N
  * N message bytes as described in the Message class
  */
+// MessageAndOffset
 abstract class MessageSet extends Iterable[MessageAndOffset] {
 
   /** Write the messages in this set to the given channel starting at the given offset byte. 

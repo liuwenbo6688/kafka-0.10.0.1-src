@@ -438,7 +438,11 @@ class Partition(val topic: String,
               .format(topic, partitionId, inSyncSize, minIsr))
           }
 
+
+          // 获取这个Partition对应的Log,基于这个Log对象把数据写入几进去
           val info = log.append(messages, assignOffsets = true)
+
+
           // probably unblock some follower fetch requests since log end offset has been updated
           replicaManager.tryCompleteDelayedFetch(new TopicPartitionOperationKey(this.topic, this.partitionId))
           // we may need to increment high watermark since ISR could be down to 1

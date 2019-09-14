@@ -56,7 +56,10 @@ import kafka.common.InvalidOffsetException
 class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long, val maxIndexSize: Int = -1) extends Logging {
   
   private val lock = new ReentrantLock
-  
+
+  // 这个东西大致可以理解为是基于os cache实现的文件映射到内存的技术
+  // 就是可以把底层的.index文件映射到os内存里去
+  // 针对这个东西的读和写，都是基于os cache内存来执行的
   /* initialize the memory mapping for this index */
   @volatile
   private[this] var mmap: MappedByteBuffer = {
@@ -72,6 +75,7 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
 
       /* memory-map the file */
       val len = raf.length()
+      //
       val idx = raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, len)
 
       /* set the position in the index for the next entry */
@@ -207,10 +211,18 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
       require(!isFull, "Attempt to append to a full index (size = " + _entries + ").")
       if (_entries == 0 || offset > _lastOffset) {
         debug("Adding index entry %d => %d to %s.".format(offset, position, _file.getName))
-        mmap.putInt((offset - baseOffset).toInt)
+
+        //  MappedByteBuffer
+        // 基于 os cache来进行的，也就是写入的其实是内存，而不是底层的磁盘文件
+        // 一个稀疏索引，对应一个物理位置
+        mmap.putInt((offset - baseOffset).toInt)// 写的是offset的差值，可以减少写入的数据大小
         mmap.putInt(position)
+
+        // _entries +1
+        // _lastOffset 置为 offset
         _entries += 1
         _lastOffset = offset
+
         require(_entries * 8 == mmap.position, _entries + " entries but file position in index is " + mmap.position + ".")
       } else {
         throw new InvalidOffsetException("Attempt to append an offset (%d) to position %d no larger than the last offset appended (%d) to %s."

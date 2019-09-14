@@ -541,6 +541,7 @@ private[kafka] class Processor(val id: Int,
           startTimeMs = time.milliseconds, securityProtocol = protocol)
         // 放到requestChannel的 请求队列 中去
         requestChannel.sendRequest(req)
+        // 取消对 OP_READ 的监听
         selector.mute(receive.source)
       } catch {
         case e @ (_: InvalidRequestException | _: SchemaException) =>
@@ -557,6 +558,7 @@ private[kafka] class Processor(val id: Int,
         throw new IllegalStateException(s"Send for ${send.destination} completed, but not in `inflightResponses`")
       }
       resp.request.updateRequestMetrics()
+      // 继续监听 OP_READ 事件
       selector.unmute(send.destination)
     }
   }

@@ -102,7 +102,7 @@ object Message {
 
 /**
  * A message. The format of an N byte message is the following:
- *
+ * 数据的格式
  * 1. 4 byte CRC32 of the message
  * 2. 1 byte "magic" identifier to allow format changes, value is 0 or 1
  * 3. 1 byte "attributes" identifier to allow annotations on the message independent of the version

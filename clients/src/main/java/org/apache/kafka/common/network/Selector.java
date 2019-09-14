@@ -409,6 +409,7 @@ public class Selector implements Selectable {
                 else
                     log.warn("Unexpected error from {}; closing connection", desc, e);
                 close(channel);
+                // 异常处理，放入断开的连接列表中
                 this.disconnected.add(channel.id());
             }
         }
@@ -619,7 +620,7 @@ public class Selector implements Selectable {
             while (iter.hasNext()) {
                 Map.Entry<KafkaChannel, Deque<NetworkReceive>> entry = iter.next();
                 KafkaChannel channel = entry.getKey();
-                if (!channel.isMute()) {
+                if (!channel.isMute()) { // 关注了op_read事件
                     Deque<NetworkReceive> deque = entry.getValue();
 
                     // 只从暂存队列中取出(poll)一个响应，然后放到completedReceives队列中

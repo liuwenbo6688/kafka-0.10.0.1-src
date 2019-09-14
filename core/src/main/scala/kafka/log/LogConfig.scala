@@ -58,15 +58,22 @@ case class LogConfig(props: java.util.Map[_, _]) extends AbstractConfig(LogConfi
    * Important note: Any configuration parameter that is passed along from KafkaConfig to LogConfig
    * should also go in copyKafkaConfigToLog.
    */
+
+
+  // segment.bytes
   val segmentSize = getInt(LogConfig.SegmentBytesProp)
+  // segment.ms
   val segmentMs = getLong(LogConfig.SegmentMsProp)
+
   val segmentJitterMs = getLong(LogConfig.SegmentJitterMsProp)
   val maxIndexSize = getInt(LogConfig.SegmentIndexBytesProp)
+  // flush.messages
   val flushInterval = getLong(LogConfig.FlushMessagesProp)
   val flushMs = getLong(LogConfig.FlushMsProp)
   val retentionSize = getLong(LogConfig.RetentionBytesProp)
   val retentionMs = getLong(LogConfig.RetentionMsProp)
   val maxMessageSize = getInt(LogConfig.MaxMessageBytesProp)
+  // index.interval.bytes
   val indexInterval = getInt(LogConfig.IndexIntervalBytesProp)
   val fileDeleteDelayMs = getLong(LogConfig.FileDeleteDelayMsProp)
   val deleteRetentionMs = getLong(LogConfig.DeleteRetentionMsProp)

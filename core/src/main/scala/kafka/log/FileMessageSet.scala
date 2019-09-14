@@ -81,6 +81,7 @@ class FileMessageSet private[kafka](@volatile var file: File,
    */
   def this(file: File, fileAlreadyExists: Boolean, initFileSize: Int, preallocate: Boolean) =
       this(file,
+        //
         channel = FileMessageSet.openChannel(file, mutable = true, fileAlreadyExists, initFileSize, preallocate),
         start = 0,
         end = ( if ( !fileAlreadyExists && preallocate ) 0 else Int.MaxValue),
@@ -294,7 +295,16 @@ class FileMessageSet private[kafka](@volatile var file: File,
    * Append these messages to the message set
    */
   def append(messages: ByteBufferMessageSet) {
+
+    /**
+      *  ByteBufferMessageSet  肯定知道是封装了这个分区partition本次要写入的所有数据
+      *  此时调用这个方法，其实就是把这些数据写入到一个Channel里去
+      *  这个channel想想就知道，一定是对接着底层的磁盘文件的
+      *  而且还要考虑下，这个channel刚开始写入的时候，是不是写入的os cache中
+      */
     val written = messages.writeFullyTo(channel)
+
+
     _size.getAndAdd(written)
   }
 
@@ -377,6 +387,7 @@ object FileMessageSet
 {
   /**
    * Open a channel for the given file
+    * 打开指定文件的一个channel
    * For windows NTFS and some old LINUX file system, set preallocate to true and initFileSize
    * with one value (for example 512 * 1025 *1024 ) can improve the kafka produce performance.
    * @param file File path

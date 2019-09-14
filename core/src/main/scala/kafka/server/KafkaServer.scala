@@ -116,6 +116,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
   var socketServer: SocketServer = null
   var requestHandlerPool: KafkaRequestHandlerPool = null
 
+  // 负责磁盘读写的
   var logManager: LogManager = null
 
   var replicaManager: ReplicaManager = null
@@ -191,6 +192,8 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         socketServer = new SocketServer(config, metrics, kafkaMetricsTime)
         socketServer.startup()
 
+
+        // 初始化 replica manager
         /* start replica manager */
         replicaManager = new ReplicaManager(config, metrics, time, kafkaMetricsTime, zkUtils, kafkaScheduler, logManager,
           isShuttingDown)
@@ -212,8 +215,17 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         }
 
         /* start processing requests */
-        apis = new KafkaApis(socketServer.requestChannel, replicaManager, groupCoordinator,
-          kafkaController, zkUtils, config.brokerId, config, metadataCache, metrics, authorizer)
+        apis = new KafkaApis(socketServer.requestChannel,
+          replicaManager,  // replicaManager
+          groupCoordinator,
+          kafkaController,
+          zkUtils,
+          config.brokerId,
+          config,
+          metadataCache,
+          metrics,
+          authorizer)
+
         requestHandlerPool = new KafkaRequestHandlerPool(config.brokerId, socketServer.requestChannel, apis, config.numIoThreads)
         brokerState.newState(RunningAsBroker)
 

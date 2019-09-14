@@ -338,7 +338,8 @@ class KafkaApis(val requestChannel: RequestChannel,
     // ----------------------sendResponseCallback start----------------------------------------------------------------
     // the callback for sending a produce response
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]) {
-      // responseStatus 对应每个分区的结果
+
+      // responseStatus 对应每个分区的结果， sendResponseCallback作为回调函数传入
 
       val mergedResponseStatus = responseStatus ++ unauthorizedRequestInfo.mapValues(_ =>
         new PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED.code, -1, Message.NoTimestamp))
@@ -413,6 +414,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
       // 调用 replicaManager将消息写入副本中，leader 和follower都是replica
       // call the replica manager to append messages to the replicas
+      // 生产数据的入口
       replicaManager.appendMessages(
         produceRequest.timeout.toLong,
         produceRequest.acks, // 著名的acks
