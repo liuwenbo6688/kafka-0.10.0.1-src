@@ -119,6 +119,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
   // 负责磁盘读写的
   var logManager: LogManager = null
 
+  // 负责副本的同步
   var replicaManager: ReplicaManager = null
 
   var dynamicConfigHandlers: Map[String, ConfigHandler] = null

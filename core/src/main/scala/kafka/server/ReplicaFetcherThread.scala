@@ -61,8 +61,12 @@ class ReplicaFetcherThread(name: String,
     else 0
   private val socketTimeout: Int = brokerConfig.replicaSocketTimeoutMs
   private val replicaId = brokerConfig.brokerId
+
+  // 最长等待时间，最长等待时间内没有新的数据进入leader，follower的拉取就返回
   private val maxWait = brokerConfig.replicaFetchWaitMaxMs
+
   private val minBytes = brokerConfig.replicaFetchMinBytes
+  // 默认 1M
   private val fetchSize = brokerConfig.replicaFetchMaxBytes
 
   private def clientId = name
@@ -91,6 +95,7 @@ class ReplicaFetcherThread(name: String,
       false,
       channelBuilder
     )
+    // 复用的producer那个 NetworkClient
     new NetworkClient(
       selector,
       new ManualMetadataUpdater(),
@@ -122,15 +127,22 @@ class ReplicaFetcherThread(name: String,
       if (logger.isTraceEnabled)
         trace("Follower %d has replica log end offset %d for partition %s. Received %d messages and leader hw %d"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, topicAndPartition, messageSet.sizeInBytes, partitionData.highWatermark))
+
+      // 拿到数据就往磁盘写
       replica.log.get.append(messageSet, assignOffsets = false)
       if (logger.isTraceEnabled)
         trace("Follower %d has replica log end offset %d after appending %d bytes of messages for partition %s"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, messageSet.sizeInBytes, topicAndPartition))
+
+      // follower 更新 HW
+      // 每次fetch数据的时候，人家leader会把自己的HW返回给你
+      // follower而言，自己的LEO和leader的HW的最小值，作为自己的HW
       val followerHighWatermark = replica.logEndOffset.messageOffset.min(partitionData.highWatermark)
       // for the follower replica, we do not need to keep
       // its segment base offset the physical position,
       // these values will be computed upon making the leader
       replica.highWatermark = new LogOffsetMetadata(followerHighWatermark)
+
       if (logger.isTraceEnabled)
         trace("Follower %d set replica high watermark for partition [%s,%d] to %s"
           .format(replica.brokerId, topic, partitionId, followerHighWatermark))
@@ -226,7 +238,10 @@ class ReplicaFetcherThread(name: String,
   }
 
   protected def fetch(fetchRequest: FetchRequest): Map[TopicAndPartition, PartitionData] = {
+
+    //
     val clientResponse = sendRequest(ApiKeys.FETCH, Some(fetchRequestVersion), fetchRequest.underlying)
+
     new FetchResponse(clientResponse.responseBody).responseData.asScala.map { case (key, value) =>
       TopicAndPartition(key.topic, key.partition) -> new PartitionData(value)
     }
@@ -241,6 +256,7 @@ class ReplicaFetcherThread(name: String,
       else {
         val send = new RequestSend(sourceBroker.id.toString, header, request.toStruct)
         val clientRequest = new ClientRequest(time.milliseconds(), true, send, null)
+        // 采用同步阻塞的方式，发送请求出去
         networkClient.blockingSendAndReceive(clientRequest)(time)
       }
     }
@@ -272,6 +288,9 @@ class ReplicaFetcherThread(name: String,
 
     partitionMap.foreach { case ((TopicAndPartition(topic, partition), partitionFetchState)) =>
       if (partitionFetchState.isActive)
+        // PartitionData  :
+        // 从哪个offset开始拉取
+        // 拉取的fetch size（默认1M）
         requestMap(new TopicPartition(topic, partition)) = new JFetchRequest.PartitionData(partitionFetchState.offset, fetchSize)
     }
 

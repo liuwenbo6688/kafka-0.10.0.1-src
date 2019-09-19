@@ -85,8 +85,11 @@ abstract class AbstractFetcherThread(name: String,
 
   override def doWork() {
 
+    //1 构建 FetchRequest
     val fetchRequest = inLock(partitionMapLock) {
+
       val fetchRequest = buildFetchRequest(partitionMap)
+
       if (fetchRequest.isEmpty) {
         trace("There are no active partitions. Back off for %d ms before sending a fetch request".format(fetchBackOffMs))
         partitionMapCond.await(fetchBackOffMs, TimeUnit.MILLISECONDS)
@@ -95,6 +98,7 @@ abstract class AbstractFetcherThread(name: String,
     }
 
     if (!fetchRequest.isEmpty)
+      //
       processFetchRequest(fetchRequest)
   }
 
@@ -104,6 +108,7 @@ abstract class AbstractFetcherThread(name: String,
 
     try {
       trace("Issuing to broker %d of fetch request %s".format(sourceBroker.id, fetchRequest))
+      // fetch 请求是怎么发出去的
       responseData = fetch(fetchRequest)
     } catch {
       case t: Throwable =>
@@ -118,10 +123,12 @@ abstract class AbstractFetcherThread(name: String,
     }
     fetcherStats.requestRate.mark()
 
+    /*********************/
     if (responseData.nonEmpty) {
       // process fetched data
       inLock(partitionMapLock) {
 
+        //对fetch的结果进行处理
         responseData.foreach { case (topicAndPartition, partitionData) =>
           val TopicAndPartition(topic, partitionId) = topicAndPartition
           partitionMap.get(topicAndPartition).foreach(currentPartitionFetchState =>
@@ -139,8 +146,11 @@ abstract class AbstractFetcherThread(name: String,
                     partitionMap.put(topicAndPartition, new PartitionFetchState(newOffset))
                     fetcherLagStats.getAndMaybePut(topic, partitionId).lag = Math.max(0L, partitionData.highWatermark - newOffset)
                     fetcherStats.byteRate.mark(validBytes)
+
+                    //
                     // Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
                     processPartitionData(topicAndPartition, currentPartitionFetchState.offset, partitionData)
+
                   } catch {
                     case ime: CorruptRecordException =>
                       // we log the error and continue. This ensures two things

@@ -43,10 +43,16 @@ class Partition(val topic: String,
                 val partitionId: Int,
                 time: Time,
                 replicaManager: ReplicaManager) extends Logging with KafkaMetricsGroup {
+
+  // 当前的brokerId
   private val localBrokerId = replicaManager.config.brokerId
+
   private val logManager = replicaManager.logManager
   private val zkUtils = replicaManager.zkUtils
+
+  //
   private val assignedReplicaMap = new Pool[Int, Replica]
+
   // The read lock is only required when multiple reads are executed and needs to be in a consistent manner
   private val leaderIsrUpdateLock = new ReentrantReadWriteLock()
   private var zkVersion: Int = LeaderAndIsr.initialZKVersion
@@ -63,6 +69,7 @@ class Partition(val topic: String,
   this.logIdent = "Partition [%s,%d] on broker %d: ".format(topic, partitionId, localBrokerId)
 
   private def isReplicaLocal(replicaId: Int) : Boolean = (replicaId == localBrokerId)
+
   val tags = Map("topic" -> topic, "partition" -> partitionId.toString)
 
   newGauge("UnderReplicated",
@@ -87,8 +94,9 @@ class Partition(val topic: String,
     val replicaOpt = getReplica(replicaId)
     replicaOpt match {
       case Some(replica) => replica
+
       case None =>
-        if (isReplicaLocal(replicaId)) {
+        if (isReplicaLocal(replicaId)) {// 本地
           val config = LogConfig.fromProps(logManager.defaultConfig.originals,
                                            AdminUtils.fetchEntityConfig(zkUtils, ConfigType.Topic, topic))
           val log = logManager.createLog(TopicAndPartition(topic, partitionId), config)
@@ -115,6 +123,11 @@ class Partition(val topic: String,
       Some(replica)
   }
 
+
+  /**
+    * 这个方法是什么意思？？
+    * @return
+    */
   def leaderReplicaIfLocal(): Option[Replica] = {
     leaderReplicaIdOpt match {
       case Some(leaderReplicaId) =>
@@ -373,6 +386,7 @@ class Partition(val topic: String,
   }
 
   def maybeShrinkIsr(replicaMaxLagTimeMs: Long) {
+
     val leaderHWIncremented = inWriteLock(leaderIsrUpdateLock) {
       leaderReplicaIfLocal() match {
         case Some(leaderReplica) =>
@@ -387,6 +401,8 @@ class Partition(val topic: String,
             // we may need to increment high watermark since ISR could be down to 1
 
             replicaManager.isrShrinkRate.mark()
+
+            //  可能会更新 leader 的 HW
             maybeIncrementLeaderHW(leaderReplica)
           } else {
             false

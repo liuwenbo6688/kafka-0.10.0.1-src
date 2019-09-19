@@ -25,6 +25,8 @@ class ReplicaFetcherManager(brokerConfig: KafkaConfig, replicaMgr: ReplicaManage
         extends AbstractFetcherManager("ReplicaFetcherManager on broker " + brokerConfig.brokerId,
                                        "Replica", brokerConfig.numReplicaFetchers) {
 
+
+  // 专门创建拉取副本的线程
   override def createFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint): AbstractFetcherThread = {
     val threadName = threadNamePrefix match {
       case None =>
@@ -32,8 +34,11 @@ class ReplicaFetcherManager(brokerConfig: KafkaConfig, replicaMgr: ReplicaManage
       case Some(p) =>
         "%s:ReplicaFetcherThread-%d-%d".format(p, fetcherId, sourceBroker.id)
     }
+
+    // 负责拉取副本的线程
     new ReplicaFetcherThread(threadName, fetcherId, sourceBroker, brokerConfig,
       replicaMgr, metrics, time)
+
   }
 
   def shutdown() {

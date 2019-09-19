@@ -508,6 +508,7 @@ class Log(val dir: File,
     if(startOffset == next)
       return FetchDataInfo(currentNextOffsetMetadata, MessageSet.Empty)
 
+    //
     var entry = segments.floorEntry(startOffset)
 
     // attempt to read beyond the log end offset is an error
@@ -535,6 +536,8 @@ class Log(val dir: File,
           entry.getValue.size
         }
       }
+
+      //
       val fetchInfo = entry.getValue.read(startOffset, maxOffset, maxLength, maxPosition)
       if(fetchInfo == null) {
         entry = segments.higherEntry(entry.getKey)

@@ -124,7 +124,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   private val replicaStateChangeLock = new Object
 
-  //
+  // 拉取副本的核心组件
   val replicaFetcherManager = new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix)
 
   // 高水位
@@ -500,10 +500,13 @@ class ReplicaManager(val config: KafkaConfig,
     val fetchOnlyCommitted: Boolean = ! Request.isValidBrokerId(replicaId)
 
     // read from local logs
+    // 从本地磁盘读取数据出来，指定了每个分区从哪个offset开始读取
+    // 稀疏索引的使用，那个offset的分区段文件的哪个物理位置，就从那个物理位置开始读取（position）
     val logReadResults = readFromLocalLog(fetchOnlyFromLeader, fetchOnlyCommitted, fetchInfo)
 
     // if the fetch comes from the follower,
     // update its corresponding log end offset
+    //
     if(Request.isValidBrokerId(replicaId))
       updateFollowerLogReadResults(replicaId, logReadResults)
 
@@ -519,6 +522,8 @@ class ReplicaManager(val config: KafkaConfig,
     if(timeout <= 0 || fetchInfo.size <= 0 || bytesReadable >= fetchMinBytes || errorReadingData) {
       val fetchPartitionData = logReadResults.mapValues(result =>
         FetchResponsePartitionData(result.errorCode, result.hw, result.info.messageSet))
+
+      // 回调函数
       responseCallback(fetchPartitionData)
     } else {
       // construct the fetch results from the read results
@@ -572,6 +577,8 @@ class ReplicaManager(val config: KafkaConfig,
            * This can cause a replica to always be out of sync.
            */
           val initialLogEndOffset = localReplica.logEndOffset
+
+          // ******** 稀疏索引  二分查找
           val logReadInfo = localReplica.log match {
             case Some(log) =>
               log.read(offset, fetchSize, maxOffsetOpt)
@@ -770,12 +777,18 @@ class ReplicaManager(val config: KafkaConfig,
   /*
    * Make the current broker to become follower for a given set of partitions by:
    *
+   * 这个方法什么时候会调用？
+   * 如果说一个broker感知到自己被分配了一些follower分区之后
+   * 可能就会来调用这个方法
+   *
    * 1. Remove these partitions from the leader partitions set.
    * 2. Mark the replicas as followers so that no more data can be added from the producer clients.
    * 3. Stop fetchers for these partitions so that no more data can be added by the replica fetcher threads.
    * 4. Truncate the log and checkpoint offsets for these partitions.
    * 5. Clear the produce and fetch requests in the purgatory
    * 6. If the broker is not shutting down, add the fetcher to the new leaders.
+   *
+   *
    *
    * The ordering of doing these steps make sure that the replicas in transition will not
    * take any more messages before checkpointing offsets so that all messages before the checkpoint
@@ -863,6 +876,8 @@ class ReplicaManager(val config: KafkaConfig,
           new TopicAndPartition(partition) -> BrokerAndInitialOffset(
             metadataCache.getAliveBrokers.find(_.id == partition.leaderReplicaIdOpt.get).get.getBrokerEndPoint(config.interBrokerSecurityProtocol),
             partition.getReplica().get.logEndOffset.messageOffset)).toMap
+
+        //....
         replicaFetcherManager.addFetcherForPartitions(partitionsToMakeFollowerWithLeaderAndOffset)
 
         partitionsToMakeFollower.foreach { partition =>
@@ -896,9 +911,12 @@ class ReplicaManager(val config: KafkaConfig,
 
   private def updateFollowerLogReadResults(replicaId: Int, readResults: Map[TopicAndPartition, LogReadResult]) {
     debug("Recording follower broker %d log read results: %s ".format(replicaId, readResults))
+
+    // foreach
     readResults.foreach { case (topicAndPartition, readResult) =>
       getPartition(topicAndPartition.topic, topicAndPartition.partition) match {
         case Some(partition) =>
+          //
           partition.updateReplicaLogReadResult(replicaId, readResult)
 
           // for producer requests with ack > 1, we need to check
@@ -908,6 +926,7 @@ class ReplicaManager(val config: KafkaConfig,
           warn("While recording the replica LEO, the partition %s hasn't been created.".format(topicAndPartition))
       }
     }
+
   }
 
   private def getLeaderPartitions() : List[Partition] = {

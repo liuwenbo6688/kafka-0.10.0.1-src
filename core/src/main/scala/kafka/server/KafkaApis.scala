@@ -77,7 +77,9 @@ class KafkaApis(val requestChannel: RequestChannel,
           // 生产
         case ApiKeys.PRODUCE => handleProducerRequest(request)
 
+          // fetch的逻辑  follower来拉取副本
         case ApiKeys.FETCH => handleFetchRequest(request)
+
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
@@ -484,6 +486,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         trace(s"Sending fetch response to client ${fetchRequest.clientId} of " +
           s"${convertedPartitionData.values.map(_.messages.sizeInBytes).sum} bytes")
         val response = FetchResponse(fetchRequest.correlationId, mergedPartitionData, fetchRequest.versionId, delayTimeMs)
+        // 返回数据
         requestChannel.sendResponse(new RequestChannel.Response(request, new FetchResponseSend(request.connectionId, response)))
       }
 
@@ -505,13 +508,23 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (authorizedRequestInfo.isEmpty)
       sendResponseCallback(Map.empty)
     else {
+
       // call the replica manager to fetch messages from the local replica
+      /**
+        *
+        * 1 先会尝试从本地磁盘文件中读取指定offset之后的数据， ReplicaManager进行拉取
+        * 2 如果能够读取到，那么就直接返回给人家就可以了，通过一个回调函数发送回去
+        * 3 是不是要考虑一下 HW ISR 这些东西是否需要在这类维护
+        * 4 如果读不到任何的数据，此时需要采取时间轮机制，延迟执行fetch
+        * 5 如果这个leader有新的数据写入，此时可以唤醒时间轮中等待的 FetchRequest来执行数据拉取
+        */
       replicaManager.fetchMessages(
         fetchRequest.maxWait.toLong,
         fetchRequest.replicaId,
         fetchRequest.minBytes,
         authorizedRequestInfo,
         sendResponseCallback)
+
     }
   }
 

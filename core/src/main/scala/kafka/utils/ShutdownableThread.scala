@@ -60,6 +60,7 @@ abstract class ShutdownableThread(val name: String, val isInterruptible: Boolean
     info("Starting ")
     try{
       while(isRunning.get()){
+        //
         doWork()
       }
     } catch{
