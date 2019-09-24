@@ -126,6 +126,8 @@ class FileMessageSet private[kafka](@volatile var file: File,
    * and return its physical position. If no such offsets are found, return null.
    * @param targetOffset The offset to search for.
    * @param startingPosition The starting position in the file to begin searching from.
+    *
+    *
    */
   def searchFor(targetOffset: Long, startingPosition: Int): OffsetPosition = {
     var position = startingPosition

@@ -120,7 +120,17 @@ class LogSegment(val log: FileMessageSet,
    */
   @threadsafe
   private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): OffsetPosition = {
+    // 第一步：二分法查找，找最近的偏移量
+    // 举个例子：比如索引文件
+    // 相对offset  文件便宜地址
+    // 1          100
+    // 30         200
+    // 50         400
+    // 70         500
+    // 加入要搜索的是 相对offset是38,返回30 ，200
     val mapping = index.lookup(offset)
+
+    // 第二步: 根据最近的偏移，顺序搜索
     log.searchFor(offset, max(mapping.position, startingFilePosition))
   }
 

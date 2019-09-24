@@ -142,6 +142,7 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
       if(slot == -1)
         OffsetPosition(baseOffset, 0)
       else
+        // 返回的是要搜索的offet最近的 offset和物理地址（文件的偏移）
         OffsetPosition(baseOffset + relativeOffset(idx, slot), physical(idx, slot))
       }
   }
@@ -168,9 +169,13 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
       return -1
       
     // binary search for the entry
+    // 二分查找
     var lo = 0
     var hi = _entries - 1
     while (lo < hi) {
+      // 因为索引结构是
+      // 4字节的Int写入相对offset
+      // 4字节的Int写入文件的偏移量
       val mid = ceil(hi/2.0 + lo/2.0).toInt
       val found = relativeOffset(idx, mid)
       if (found == relOffset)
@@ -187,6 +192,7 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
   private def relativeOffset(buffer: ByteBuffer, n: Int): Int = buffer.getInt(n * 8)
   
   /* return the nth physical position */
+  // 一个 int占4个byte
   private def physical(buffer: ByteBuffer, n: Int): Int = buffer.getInt(n * 8 + 4)
   
   /**

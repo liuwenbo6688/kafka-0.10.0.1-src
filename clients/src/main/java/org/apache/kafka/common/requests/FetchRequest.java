@@ -54,8 +54,8 @@ public class FetchRequest extends AbstractRequest {
         public final int maxBytes;
 
         public PartitionData(long offset, int maxBytes) {
-            this.offset = offset;
-            this.maxBytes = maxBytes;
+            this.offset = offset; // 从哪个offset开始拉取
+            this.maxBytes = maxBytes; // 拉取数据最大大小
         }
     }
 

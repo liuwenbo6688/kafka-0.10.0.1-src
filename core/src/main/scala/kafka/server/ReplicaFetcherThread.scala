@@ -252,8 +252,10 @@ class ReplicaFetcherThread(name: String,
     val header = apiVersion.fold(networkClient.nextRequestHeader(apiKey))(networkClient.nextRequestHeader(apiKey, _))
     try {
       if (!networkClient.blockingReady(sourceNode, socketTimeout)(time))
+        // 和leader broker没有连接的情况下，要先建立好连接，如果无法建立连接直接抛出异常
         throw new SocketTimeoutException(s"Failed to connect within $socketTimeout ms")
       else {
+        // 正常情况走这个分支，可以阻塞的发送请求了
         val send = new RequestSend(sourceBroker.id.toString, header, request.toStruct)
         val clientRequest = new ClientRequest(time.milliseconds(), true, send, null)
         // 采用同步阻塞的方式，发送请求出去

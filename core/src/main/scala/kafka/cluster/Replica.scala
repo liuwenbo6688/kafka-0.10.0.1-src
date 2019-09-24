@@ -72,6 +72,7 @@ class Replica(val brokerId: Int,
     }
   }
 
+  // LEO 数据结构
   def logEndOffset =
     if (isLocal)
       log.get.logEndOffsetMetadata
