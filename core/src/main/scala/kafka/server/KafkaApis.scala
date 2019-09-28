@@ -86,7 +86,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.FETCH => handleFetchRequest(request)
 
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
+
+          //
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
+
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)

@@ -107,6 +107,7 @@ object TopicCommand extends Logging {
         warnOnMaxMessagesChange(configs, replicas)
         val rackAwareMode = if (opts.options.has(opts.disableRackAware)) RackAwareMode.Disabled
                             else RackAwareMode.Enforced
+        //
         AdminUtils.createTopic(zkUtils, topic, partitions, replicas, configs, rackAwareMode)
       }
       println("Created topic \"%s\".".format(topic))

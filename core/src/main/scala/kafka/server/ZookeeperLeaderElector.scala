@@ -46,7 +46,12 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
 
   def startup {
     inLock(controllerContext.controllerLock) {
+      // 在 "/controller" 这个znode上，注册一个监听器
+      // 如果有人竞争成为 controller，那么他会感知到
+      // 如果 有人已经成为controller或者不再是controller ，也会感知到
       controllerContext.zkUtils.zkClient.subscribeDataChanges(electionPath, leaderChangeListener)
+
+      // 发起选举
       elect
     }
   }
@@ -70,20 +75,26 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
      */
     if(leaderId != -1) {
        debug("Broker %d has been elected as leader, so stopping the election process.".format(leaderId))
+       //
        return amILeader
     }
+
+    // 尝试创建 "/controller" zonde
 
     try {
       val zkCheckedEphemeral = new ZKCheckedEphemeral(electionPath,
                                                       electString,
                                                       controllerContext.zkUtils.zkConnection.getZookeeper,
                                                       JaasUtils.isZkSecurityEnabled())
+      // zk会保证，同一时间只能有一个节点，成功创建 "/controller" 节点
+      // "/controller" 节点内容包含的就是brokerId
       zkCheckedEphemeral.create()
       info(brokerId + " successfully elected as leader")
       leaderId = brokerId
       onBecomingLeader()
     } catch {
       case e: ZkNodeExistsException =>
+        // 说明被别人创建成功了"/Controller" 节点，就去解析znode的内容，拿到leader的brokerId
         // If someone else has written the path, then
         leaderId = getControllerID 
 
@@ -133,6 +144,7 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
 
     /**
      * Called when the leader information stored in zookeeper has been delete. Try to elect as the leader
+      * 当leader节点删除之后，通知所有节点重新选举leader
      * @throws Exception
      *             On any error.
      */
@@ -141,8 +153,11 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
       inLock(controllerContext.controllerLock) {
         debug("%s leader change listener fired for path %s to handle data deleted: trying to elect as a leader"
           .format(brokerId, dataPath))
+
         if(amILeader)
           onResigningAsLeader()
+
+        // 重新选举的方法
         elect
       }
     }

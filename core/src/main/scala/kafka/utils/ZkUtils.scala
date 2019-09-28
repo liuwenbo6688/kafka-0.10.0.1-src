@@ -612,6 +612,10 @@ class ZkUtils(val zkClient: ZkClient,
               case Some(repl)  =>
                 val replicaMap = repl.asInstanceOf[Map[String, Seq[Int]]]
                 for((partition, replicas) <- replicaMap){
+                  // 解析出副本分配方案，类似下面这样
+                  // partition0 - [0,1]
+                  // partition1 - [1,2]
+                  // partition2 - [0,1]
                   ret.put(TopicAndPartition(topic, partition.toInt), replicas)
                   debug("Replicas assigned to topic [%s], partition [%s] are [%s]".format(topic, partition, replicas))
                 }

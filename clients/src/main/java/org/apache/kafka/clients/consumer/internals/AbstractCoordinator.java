@@ -214,6 +214,8 @@ public abstract class AbstractCoordinator implements Closeable {
         }
 
         while (needRejoin()) {
+
+            // 先找到这个 consumer group 对应的broker上的 coordinator
             ensureCoordinatorReady();
 
             // ensure that there are no pending requests to the coordinator. This is important
@@ -223,7 +225,9 @@ public abstract class AbstractCoordinator implements Closeable {
                 continue;
             }
 
+            //
             RequestFuture<ByteBuffer> future = sendJoinGroupRequest();
+
             future.addListener(new RequestFutureListener<ByteBuffer>() {
                 @Override
                 public void onSuccess(ByteBuffer value) {
@@ -332,7 +336,9 @@ public abstract class AbstractCoordinator implements Closeable {
                 metadata());
 
         log.debug("Sending JoinGroup ({}) to coordinator {}", request, this.coordinator);
+        // 发送 JOIN_GROUP 请求
         return client.send(coordinator, ApiKeys.JOIN_GROUP, request)
+                //
                 .compose(new JoinGroupResponseHandler());
     }
 

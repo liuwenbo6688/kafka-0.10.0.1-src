@@ -178,10 +178,12 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         /* start scheduler */
         kafkaScheduler.startup()
 
+        // zookeeper的客户端组件
         /* setup zookeeper */
         zkUtils = initZk()
 
         /* start log manager */
+        // 专门负责磁盘读写的组件
         logManager = createLogManager(zkUtils.zkClient, brokerState)
         logManager.startup()
 
@@ -190,20 +192,28 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         this.logIdent = "[Kafka Server " + config.brokerId + "], "
 
         // 核心组件 socket server
+        // 网络通信服务器
         socketServer = new SocketServer(config, metrics, kafkaMetricsTime)
         socketServer.startup()
 
 
         // 初始化 replica manager
+        // 封装了 LogManager ，管理副本数据
+        // 将副本写入本地磁盘
+        // 从其他的 Broker 去拉取数据进行同步
         /* start replica manager */
         replicaManager = new ReplicaManager(config, metrics, time, kafkaMetricsTime, zkUtils, kafkaScheduler, logManager,
           isShuttingDown)
         replicaManager.startup()
 
+        // 每个Broker都会有一个 KafkaController
+        // 但是同一时间其实只有一个Broker真正成为Controller，其他Broker会监视着，一旦那个broker挂了，其他人会重新尝试变为Controller
         /* start kafka controller */
         kafkaController = new KafkaController(config, zkUtils, brokerState, kafkaMetricsTime, metrics, threadNamePrefix)
         kafkaController.startup()
 
+
+        // 负责管理消费者的组件
         /* start group coordinator */
         groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, kafkaMetricsTime)
         groupCoordinator.startup()

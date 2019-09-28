@@ -114,7 +114,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         addMetadataListener();
 
-        if (autoCommitEnabled) {
+        if (autoCommitEnabled) {// 自动提交 offset
             this.autoCommitTask = new AutoCommitTask(autoCommitIntervalMs);
             this.autoCommitTask.reschedule();
         } else {

@@ -148,6 +148,7 @@ object ReassignPartitionsCommand extends Logging {
     val reassignPartitionsCommand = new ReassignPartitionsCommand(zkUtils, partitionsToBeReassigned.toMap)
     // before starting assignment, output the current replica assignment to facilitate rollback
     val currentPartitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(partitionsToBeReassigned.map(_._1.topic))
+
     println("Current partition replica assignment\n\n%s\n\nSave this to use as the --reassignment-json-file option during rollback"
       .format(zkUtils.formatAsReassignmentJson(currentPartitionReplicaAssignment)))
     // start the reassignment
@@ -234,6 +235,8 @@ class ReassignPartitionsCommand(zkUtils: ZkUtils, partitions: collection.Map[Top
       }
       else {
         val jsonReassignmentData = zkUtils.formatAsReassignmentJson(validPartitions)
+        // 触发执行副本重分配的方案，把副本重分配的方案写到zk中
+        // 一定是 controller会监听那个副本重分配的znode，感知到有触发的操作，立马就开始执行副本的重分配的操作
         zkUtils.createPersistentPath(ZkUtils.ReassignPartitionsPath, jsonReassignmentData)
         true
       }

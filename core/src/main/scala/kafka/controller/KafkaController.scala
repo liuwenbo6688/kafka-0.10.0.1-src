@@ -163,12 +163,20 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   val controllerContext = new ControllerContext(zkUtils, config.zkSessionTimeoutMs)
   val partitionStateMachine = new PartitionStateMachine(this)
   val replicaStateMachine = new ReplicaStateMachine(this)
-  private val controllerElector = new ZookeeperLeaderElector(controllerContext, ZkUtils.ControllerPath, onControllerFailover,
-    onControllerResignation, config.brokerId)
+
+  //  "/controller"
+  private val controllerElector = new ZookeeperLeaderElector(controllerContext,
+    ZkUtils.ControllerPath,
+    onControllerFailover, // onControllerFailover会在当前节点被选举为leader之后调用， onBecomingLeader
+    onControllerResignation,
+    config.brokerId)
+
   // have a separate scheduler for the controller to be able to start and stop independently of the
   // kafka server
   private val autoRebalanceScheduler = new KafkaScheduler(1)
+
   var deleteTopicManager: TopicDeletionManager = null
+
   val offlinePartitionSelector = new OfflinePartitionLeaderSelector(controllerContext, config)
   private val reassignedPartitionLeaderSelector = new ReassignedPartitionLeaderSelector(controllerContext)
   private val preferredReplicaPartitionLeaderSelector = new PreferredReplicaPartitionLeaderSelector(controllerContext)
@@ -324,13 +332,25 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       readControllerEpochFromZookeeper()
       // increment the controller epoch
       incrementControllerEpoch(zkUtils.zkClient)
+
+
       // before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
+      // 注册一个 reassigned partition 的监听器
       registerReassignedPartitionsListener()
+
       registerIsrChangeNotificationListener()
       registerPreferredReplicaElectionListener()
+
+      // 在这里注册 topics 的监听
       partitionStateMachine.registerListeners()
+
+
+      //  "/brokers/ids"  监听节点的变化 ， broker节点的加入和下线
       replicaStateMachine.registerListeners()
+
+
       initializeControllerContext()
+
       replicaStateMachine.startup()
       partitionStateMachine.startup()
       // register the partition change listeners for all existing topics on failover
@@ -639,7 +659,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
               controllerContext.partitionsBeingReassigned.put(topicAndPartition, reassignedPartitionContext)
               // mark topic ineligible for deletion for the partitions being reassigned
               deleteTopicManager.markTopicIneligibleForDeletion(Set(topic))
+
+              //
               onPartitionReassignment(topicAndPartition, reassignedPartitionContext)
+
             } else {
               // some replica in RAR is not alive. Fail partition reassignment
               throw new KafkaException("Only %s replicas out of the new set of replicas".format(aliveNewReplicas.mkString(",")) +
@@ -679,8 +702,12 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def startup() = {
     inLock(controllerContext.controllerLock) {
       info("Controller starting up")
+
+      //
       registerSessionExpirationListener()
       isRunning = true
+
+      //
       controllerElector.startup
       info("Controller startup complete")
     }
@@ -941,6 +968,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   private def registerReassignedPartitionsListener() = {
+    //  "/admin/reassign_partitions"  -->  PartitionsReassignedListener
     zkUtils.zkClient.subscribeDataChanges(ZkUtils.ReassignPartitionsPath, partitionReassignedListener)
   }
 
@@ -1270,6 +1298,7 @@ class PartitionsReassignedListener(controller: KafkaController) extends IZkDataL
           controller.removePartitionFromReassignedPartitions(partitionToBeReassigned._1)
         } else {
           val context = new ReassignedPartitionsContext(partitionToBeReassigned._2)
+          //
           controller.initiateReassignReplicasForTopicPartition(partitionToBeReassigned._1, context)
         }
       }

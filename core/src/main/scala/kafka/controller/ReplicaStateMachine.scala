@@ -49,7 +49,9 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerId = controller.config.brokerId
   private val zkUtils = controllerContext.zkUtils
   private val replicaState: mutable.Map[PartitionAndReplica, ReplicaState] = mutable.Map.empty
+
   private val brokerChangeListener = new BrokerChangeListener()
+
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(controller)
   private val hasStarted = new AtomicBoolean(false)
   private val stateChangeLogger = KafkaController.stateChangeLogger
@@ -369,12 +371,21 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               val liveBrokerIdsSorted = curBrokerIds.toSeq.sorted
               info("Newly added brokers: %s, deleted brokers: %s, all live brokers: %s"
                 .format(newBrokerIdsSorted.mkString(","), deadBrokerIdsSorted.mkString(","), liveBrokerIdsSorted.mkString(",")))
+
+              // 新增的节点处理，添加
               newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
+
+              // 死掉的节点处理，移除
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
+
+              //
               if(newBrokerIds.size > 0)
                 controller.onBrokerStartup(newBrokerIdsSorted)
+
+              //
               if(deadBrokerIds.size > 0)
                 controller.onBrokerFailure(deadBrokerIdsSorted)
+
             } catch {
               case e: Throwable => error("Error while handling broker changes", e)
             }
