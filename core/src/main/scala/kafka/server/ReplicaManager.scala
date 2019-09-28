@@ -144,8 +144,10 @@ class ReplicaManager(val config: KafkaConfig,
 
   val delayedProducePurgatory = DelayedOperationPurgatory[DelayedProduce](
     purgatoryName = "Produce", config.brokerId, config.producerPurgatoryPurgeIntervalRequests)
+
   val delayedFetchPurgatory = DelayedOperationPurgatory[DelayedFetch](
     purgatoryName = "Fetch", config.brokerId, config.fetchPurgatoryPurgeIntervalRequests)
+
 
   val leaderCount = newGauge(
     "LeaderCount",
@@ -363,6 +365,7 @@ class ReplicaManager(val config: KafkaConfig,
 
       // 是否需要等follower同步成功，
       if (delayedRequestRequired(requiredAcks, messagesPerPartition, localProduceResults)) {
+        // 延迟调度，时间轮
         // create delayed produce operation
         val produceMetadata = ProduceMetadata(requiredAcks, produceStatus)
         val delayedProduce = new DelayedProduce(timeout, produceMetadata, this, responseCallback)
@@ -539,6 +542,7 @@ class ReplicaManager(val config: KafkaConfig,
       // 如果可以立即返回的话，直接调用回调函数
       responseCallback(fetchPartitionData)
     } else {
+      // 没有读到数据，延迟调度
       // construct the fetch results from the read results
       val fetchPartitionStatus = logReadResults.map { case (topicAndPartition, result) =>
         (topicAndPartition, FetchPartitionStatus(result.info.fetchOffsetMetadata, fetchInfo.get(topicAndPartition).get))
@@ -552,6 +556,7 @@ class ReplicaManager(val config: KafkaConfig,
       // try to complete the request immediately, otherwise put it into the purgatory;
       // this is because while the delayed fetch operation is being created, new requests
       // may arrive and hence make this operation completable.
+      // 时间轮的机制
       delayedFetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys)
     }
   }
@@ -939,6 +944,7 @@ class ReplicaManager(val config: KafkaConfig,
 
           // for producer requests with ack > 1, we need to check
           // if they can be unblocked after some follower's log end offsets have moved
+          // produce任务的延迟调度
           tryCompleteDelayedProduce(new TopicPartitionOperationKey(topicAndPartition))
         case None =>
           warn("While recording the replica LEO, the partition %s hasn't been created.".format(topicAndPartition))
