@@ -115,6 +115,7 @@ class FileMessageSet private[kafka](@volatile var file: File,
       throw new IllegalArgumentException("Invalid position: " + position)
     if(size < 0)
       throw new IllegalArgumentException("Invalid size: " + size)
+    // 返回 FileMessageSet
     new FileMessageSet(file,
                        channel,
                        start = this.start + position,

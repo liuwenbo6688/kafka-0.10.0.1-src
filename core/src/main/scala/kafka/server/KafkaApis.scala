@@ -78,6 +78,11 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.PRODUCE => handleProducerRequest(request)
 
           // fetch的逻辑  follower来拉取副本
+          // 1 先会尝试从本地磁盘文件读取指定offset之后的数据
+          // 2 如果能读取到，那么就直接返回给人家就可以了
+          // 3 是不是考虑更新一下 HW, ISR,这些东西是否需要维护
+          // 4 如果拉取不到任何数据，此时需要采用时间轮机制，延迟执行fetch
+          // 5 如果leader分区有新的数据写入，此时就可以唤醒时间轮中等待的fetch request来执行拉取数据
         case ApiKeys.FETCH => handleFetchRequest(request)
 
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
@@ -446,6 +451,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       FetchResponsePartitionData(Errors.TOPIC_AUTHORIZATION_FAILED.code, -1, MessageSet.Empty)
     }
 
+    // 定义一个回调函数
     // the callback for sending a fetch response
     def sendResponseCallback(responsePartitionData: Map[TopicAndPartition, FetchResponsePartitionData]) {
 

@@ -88,6 +88,8 @@ abstract class AbstractFetcherThread(name: String,
     //1 构建 FetchRequest
     val fetchRequest = inLock(partitionMapLock) {
 
+      // 针对leader都在某个Broker上的一批follower分区,构建一个 fetchRequest 对象
+      // 恢复送给一个Broker，说我们这儿有一批follower分区要拉取数据
       val fetchRequest = buildFetchRequest(partitionMap)
 
       if (fetchRequest.isEmpty) {
@@ -98,7 +100,7 @@ abstract class AbstractFetcherThread(name: String,
     }
 
     if (!fetchRequest.isEmpty)
-      //
+      // 处理这个构建好的
       processFetchRequest(fetchRequest)
   }
 
@@ -123,7 +125,11 @@ abstract class AbstractFetcherThread(name: String,
     }
     fetcherStats.requestRate.mark()
 
-    /*********************/
+    /**
+      * 对 fetch 结果进行处理
+      * 必然是写入自己本地follower分区的磁盘文件
+      * 更新LEO
+     */
     if (responseData.nonEmpty) {
       // process fetched data
       inLock(partitionMapLock) {
@@ -135,6 +141,8 @@ abstract class AbstractFetcherThread(name: String,
             // we append to the log if the current offset is defined and it is the same as the offset requested during fetch
             if (fetchRequest.offset(topicAndPartition) == currentPartitionFetchState.offset) {
               Errors.forCode(partitionData.errorCode) match {
+
+                //
                 case Errors.NONE =>
                   try {
                     val messages = partitionData.toByteBufferMessageSet
@@ -147,7 +155,7 @@ abstract class AbstractFetcherThread(name: String,
                     fetcherLagStats.getAndMaybePut(topic, partitionId).lag = Math.max(0L, partitionData.highWatermark - newOffset)
                     fetcherStats.byteRate.mark(validBytes)
 
-                    //
+                    // 处理每个分区的数据
                     // Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
                     processPartitionData(topicAndPartition, currentPartitionFetchState.offset, partitionData)
 
@@ -162,6 +170,8 @@ abstract class AbstractFetcherThread(name: String,
                       throw new KafkaException("error processing data for partition [%s,%d] offset %d"
                         .format(topic, partitionId, currentPartitionFetchState.offset), e)
                   }
+
+
                 case Errors.OFFSET_OUT_OF_RANGE =>
                   try {
                     val newOffset = handleOffsetOutOfRange(topicAndPartition)

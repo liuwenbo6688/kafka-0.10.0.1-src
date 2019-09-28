@@ -508,7 +508,7 @@ class Log(val dir: File,
     if(startOffset == next)
       return FetchDataInfo(currentNextOffsetMetadata, MessageSet.Empty)
 
-    //
+    // NavigableMap 的 floorEntry找到小于startOffset的所有段中最大的那个
     var entry = segments.floorEntry(startOffset)
 
     // attempt to read beyond the log end offset is an error
@@ -537,8 +537,9 @@ class Log(val dir: File,
         }
       }
 
-      //
+      // 读取，从 LogSegment 中读取
       val fetchInfo = entry.getValue.read(startOffset, maxOffset, maxLength, maxPosition)
+
       if(fetchInfo == null) {
         entry = segments.higherEntry(entry.getKey)
       } else {

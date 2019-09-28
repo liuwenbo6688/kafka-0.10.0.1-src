@@ -128,16 +128,22 @@ class ReplicaFetcherThread(name: String,
         trace("Follower %d has replica log end offset %d for partition %s. Received %d messages and leader hw %d"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, topicAndPartition, messageSet.sizeInBytes, partitionData.highWatermark))
 
-      // 拿到数据就往磁盘写
+      // 1、拿到数据就往磁盘写
+      // 这个地方，不管是leader还是follower写磁盘文件的方法是一样的
+      // 也就是两边更新LEO的方式也是一样的
       replica.log.get.append(messageSet, assignOffsets = false)
+
+
       if (logger.isTraceEnabled)
         trace("Follower %d has replica log end offset %d after appending %d bytes of messages for partition %s"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, messageSet.sizeInBytes, topicAndPartition))
 
-      // follower 更新 HW
+      // 2、follower 更新 HW
       // 每次fetch数据的时候，人家leader会把自己的HW返回给你
-      // follower而言，自己的LEO和leader的HW的最小值，作为自己的HW
+      // * follower而言，自己的LEO和leader的HW的最小值，作为自己的HW *
       val followerHighWatermark = replica.logEndOffset.messageOffset.min(partitionData.highWatermark)
+
+
       // for the follower replica, we do not need to keep
       // its segment base offset the physical position,
       // these values will be computed upon making the leader
@@ -239,7 +245,7 @@ class ReplicaFetcherThread(name: String,
 
   protected def fetch(fetchRequest: FetchRequest): Map[TopicAndPartition, PartitionData] = {
 
-    //
+    // 发送 FETCH 请求
     val clientResponse = sendRequest(ApiKeys.FETCH, Some(fetchRequestVersion), fetchRequest.underlying)
 
     new FetchResponse(clientResponse.responseBody).responseData.asScala.map { case (key, value) =>
@@ -296,6 +302,8 @@ class ReplicaFetcherThread(name: String,
         requestMap(new TopicPartition(topic, partition)) = new JFetchRequest.PartitionData(partitionFetchState.offset, fetchSize)
     }
 
+    // 一次fetch的请求过去，至少要拉取 minBytes（默认1个字节） 的数据
+    // 如果连一个字节的数据都没有，此时就需要等待一段时间，最多可以等待多长时间 maxWait（时间轮）
     new FetchRequest(new JFetchRequest(replicaId, maxWait, minBytes, requestMap.asJava))
   }
 

@@ -77,8 +77,9 @@ class NetworkClientBlockingOps(val client: NetworkClient) extends AnyVal {
   def blockingSendAndReceive(request: ClientRequest)(implicit time: JTime): ClientResponse = {
     client.send(request, time.milliseconds())
 
+    // 先看 pollContinuously
     //
-    pollContinuously { responses =>
+    pollContinuously { responses => // 这个匿名函数在 pollContinuously 被使用而已，其实没什么复杂，就是语法糖而已
       val response = responses.find { response =>
         response.request.request.header.correlationId == request.request.header.correlationId
       }

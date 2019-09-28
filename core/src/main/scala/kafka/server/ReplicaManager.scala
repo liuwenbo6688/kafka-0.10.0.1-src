@@ -231,7 +231,9 @@ class ReplicaManager(val config: KafkaConfig,
 
   def startup() {
     // start ISR expiration thread
+    // 10s中执行一次，执行 maybeShrinkIsr
     scheduler.schedule("isr-expiration", maybeShrinkIsr, period = config.replicaLagTimeMaxMs, unit = TimeUnit.MILLISECONDS)
+
     scheduler.schedule("isr-change-propagation", maybePropagateIsrChanges, period = 2500L, unit = TimeUnit.MILLISECONDS)
   }
 
@@ -509,8 +511,9 @@ class ReplicaManager(val config: KafkaConfig,
 
     // if the fetch comes from the follower,
     // update its corresponding log end offset
-    // 更新leader中维护的follower的 LEO
+    // *** 更新leader中维护的follower的 LEO
     if(Request.isValidBrokerId(replicaId))
+      //
       updateFollowerLogReadResults(replicaId, logReadResults)
 
     // check if this fetch request can be satisfied right away
@@ -533,7 +536,7 @@ class ReplicaManager(val config: KafkaConfig,
       val fetchPartitionData = logReadResults.mapValues(result =>
         FetchResponsePartitionData(result.errorCode, result.hw, result.info.messageSet))
 
-      // 回调函数
+      // 如果可以立即返回的话，直接调用回调函数
       responseCallback(fetchPartitionData)
     } else {
       // construct the fetch results from the read results
@@ -919,6 +922,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   private def maybeShrinkIsr(): Unit = {
     trace("Evaluating ISR list of partitions to see which replicas can be removed from the ISR")
+    // 是否有的副本同步太慢，就把他从isr中把他踢掉
     allPartitions.values.foreach(partition => partition.maybeShrinkIsr(config.replicaLagTimeMaxMs))
   }
 
