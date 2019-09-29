@@ -97,10 +97,15 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
         case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request)
+          //
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
+
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
+
+          //
         case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)
+
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
@@ -940,6 +945,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       // let the coordinator to handle join-group
       val protocols = joinGroupRequest.groupProtocols().map(protocol =>
         (protocol.name, Utils.toArray(protocol.metadata))).toList
+      //
       coordinator.handleJoinGroup(
         joinGroupRequest.groupId,
         joinGroupRequest.memberId,

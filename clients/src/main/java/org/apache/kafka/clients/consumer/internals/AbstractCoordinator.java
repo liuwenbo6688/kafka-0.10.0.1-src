@@ -233,6 +233,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 public void onSuccess(ByteBuffer value) {
                     // handle join completion in the callback so that the callback will be invoked
                     // even if the consumer is woken up before finishing the rebalance
+                    //
                     onJoinComplete(generation, memberId, protocol, value);
                     needsJoinPrepare = true;
                     heartbeatTask.reset();
@@ -361,6 +362,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 AbstractCoordinator.this.protocol = joinResponse.groupProtocol();
                 sensors.joinLatency.record(response.requestLatencyMs());
                 if (joinResponse.isLeader()) {
+                    //
                     onJoinLeader(joinResponse).chain(future);
                 } else {
                     onJoinFollower().chain(future);
