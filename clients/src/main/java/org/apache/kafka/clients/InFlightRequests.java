@@ -22,6 +22,9 @@ import java.util.Map;
 
 /**
  * The set of requests which have been sent or are being sent but haven't yet received a response
+ * 正在发送中的请求缓存
+ *
+ *   In Flight：在航班上，意思就是等待响应的过程中
  */
 final class InFlightRequests {
 
@@ -58,6 +61,7 @@ final class InFlightRequests {
      * Get the oldest request (the one that that will be completed next) for the given node
      */
     public ClientRequest completeNext(String node) {
+        // 获取到队列中最久的数据
         return requestQueue(node).pollLast();
     }
 
@@ -66,6 +70,7 @@ final class InFlightRequests {
      * @param node The node id
      */
     public ClientRequest lastSent(String node) {
+        // peek是不会从队列中移除的
         return requestQueue(node).peekFirst();
     }
 
@@ -141,7 +146,7 @@ final class InFlightRequests {
      * @return list of nodes
      */
     public List<String> getNodesWithTimedOutRequests(long now, int requestTimeout) {
-        List<String> nodeIds = new LinkedList<String>();
+        List<String> nodeIds = new LinkedList<String>();//拿到有超时请求的节点
         for (String nodeId : requests.keySet()) {
             if (inFlightRequestCount(nodeId) > 0) {
                 ClientRequest request = requests.get(nodeId).peekLast();

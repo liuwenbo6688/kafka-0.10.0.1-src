@@ -71,7 +71,7 @@ public class NetworkReceive implements Receive {
 
     @Override
     public boolean complete() {
-        // 解决拆包问题2
+        // 解决拆包问题2，
         return !size.hasRemaining() && !buffer.hasRemaining();
     }
 
@@ -86,16 +86,18 @@ public class NetworkReceive implements Receive {
     public long readFromReadableChannel(ReadableByteChannel channel) throws IOException {
 
         /**
-         * 读取数据的时候，粘包的情况怎么处理 ： 很多响应粘在一块，如何区分
+         * 粘包问题：
+         * 读取数据的时候，粘包的情况怎么处理 ： 很多响应粘在一块，如何区分？
          *
-         * 拆包问题，对方一条数据时分开发送的?
+         * 拆包问题：
+         * 对方一条数据是分开发送的?
          *
          */
 
         int read = 0;
         if (size.hasRemaining()) {
 
-            // 读取4个字节的数字
+            // 读取4个字节的数字，代表后面真实数据的长度
             int bytesRead = channel.read(size);
 
             if (bytesRead < 0)
@@ -118,9 +120,11 @@ public class NetworkReceive implements Receive {
                 if (maxSize != UNLIMITED && receiveSize > maxSize)
                     throw new InvalidReceiveException("Invalid receive (size = " + receiveSize + " larger than " + maxSize + ")");
 
+                // 分配实际大小的ByteBuffer
                 this.buffer = ByteBuffer.allocate(receiveSize);
             }
         }
+
         if (buffer != null) {
             int bytesRead = channel.read(buffer);
             if (bytesRead < 0)

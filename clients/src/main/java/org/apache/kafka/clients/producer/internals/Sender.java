@@ -51,8 +51,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The background thread that handles the sending of produce requests to the Kafka cluster. This thread makes metadata
- * requests to renew its view of the cluster and then sends produce requests to the appropriate nodes.
+ * The background thread that handles the sending of produce requests to the Kafka cluster.
+ * This thread makes metadata requests to renew its view of the cluster and then sends produce requests to the appropriate nodes.
  */
 public class Sender implements Runnable {
 
@@ -62,9 +62,11 @@ public class Sender implements Runnable {
     private final KafkaClient client;
 
     /* the record accumulator that batches records */
+    // 内存缓冲，要发送的数据都缓存在这里
     private final RecordAccumulator accumulator;
 
     /* the metadata for the client */
+    // 客户端缓存的元数据
     private final Metadata metadata;
 
     /* the flag indicating whether the producer should guarantee the message order on the broker or not. */
@@ -176,7 +178,11 @@ public class Sender implements Runnable {
      */
     void run(long now) {
         Cluster cluster = metadata.fetch();
+
         // get the list of partitions with data ready to send
+        /**
+         * 筛选出来哪些broker可以发送数据 和 下一次ready检查的时间间隔
+         */
         RecordAccumulator.ReadyCheckResult result = this.accumulator.ready(cluster, now);
 
         // if there are any partitions whose leaders are not known yet, force metadata update
@@ -194,6 +200,7 @@ public class Sender implements Runnable {
 
             if (!this.client.ready(node, now)) {
                 /**
+                 * ready()方法很重要，判断是否和node建立连接
                  * 如果跟broker还没有建立连接，是不会发送请求的
                  * 在迭代器中就把这个节点删掉了
                  */
@@ -203,10 +210,12 @@ public class Sender implements Runnable {
         }
 
         // create produce requests
+        // 聚合针对每个broker的 batch列表， <brokerId, batchList>
         Map<Integer, List<RecordBatch>> batches = this.accumulator.drain(cluster,
                                                                          result.readyNodes,
                                                                          this.maxRequestSize,
                                                                          now);
+
         if (guaranteeMessageOrder) {
             // Mute all the partitions drained
             for (List<RecordBatch> batchList : batches.values()) {
@@ -226,7 +235,8 @@ public class Sender implements Runnable {
         sensors.updateProduceRequestMetrics(batches);
 
         /**
-         * 构建请求 ClientRequest
+         * 构建请求 ClientRequest：
+         * 针对一个broker，构造一个ClientRequest
          */
         List<ClientRequest> requests = createProduceRequests(batches, now);
 
@@ -242,7 +252,9 @@ public class Sender implements Runnable {
         }
 
 
-
+        /**
+         * 把请求暂存在相关的组件中，然后下面让万能的poll()方法真正的发送请求
+         */
         for (ClientRequest request : requests)
             client.send(request, now);
 
@@ -250,7 +262,11 @@ public class Sender implements Runnable {
         // otherwise if some partition already has some data accumulated but not ready yet,
         // the select time will be the time difference between now and its linger expiry time;
         // otherwise the select time will be the time difference between now and the metadata expiry time;
-        // 最重要进入这个方法
+
+        /**
+         * 最牛逼的一个方法，一切连接，读取和发送数据的流程都在poll中实现
+         * 最重要进入这个方法, 包括发送数据和读取响应
+         */
         this.client.poll(pollTimeout, now);
     }
 
@@ -296,8 +312,12 @@ public class Sender implements Runnable {
                     // 响应错误码
                     Errors error = Errors.forCode(partResp.errorCode);
                     RecordBatch batch = batches.get(tp);
-                    // ******
+
+                    /**
+                     *
+                     */
                     completeBatch(batch, error, partResp.baseOffset, partResp.timestamp, correlationId, now);
+
                 }
                 this.sensors.recordLatency(response.request().request().destination(), response.requestLatencyMs());
                 this.sensors.recordThrottleTime(response.request().request().destination(),
@@ -322,29 +342,41 @@ public class Sender implements Runnable {
      * @param now The current POSIX time stamp in milliseconds
      */
     private void completeBatch(RecordBatch batch, Errors error, long baseOffset, long timestamp, long correlationId, long now) {
+
         if (error != Errors.NONE && canRetry(batch, error) /*是否可以重试*/) {
-            // 请求的响应里有异常
+
+            /**
+             * 请求的响应里有异常,要怎么处理
+             * 可以重试的情况下，消息重新放入缓冲区
+             */
             // retry
             log.warn("Got error produce response with correlation id {} on topic-partition {}, retrying ({} attempts left). Error: {}",
                      correlationId,
                      batch.topicPartition,
                      this.retries - batch.attempts - 1,
                      error);
-            // 非常关键的逻辑： 重新放入缓冲区
+
+            //**** 非常关键的逻辑： 重新放入缓冲区
             this.accumulator.reenqueue(batch, now);
+
             this.sensors.recordRetries(batch.topicPartition.topic(), batch.recordCount);
         } else {
-            // 正常情况
-            RuntimeException exception;
+            // 正常发送成功  或者 异常并且超过重试次数
+
+            RuntimeException exception;// 能拿到发生的异常信息
             if (error == Errors.TOPIC_AUTHORIZATION_FAILED)
                 exception = new TopicAuthorizationException(batch.topicPartition.topic());
             else
                 exception = error.exception();
+
             // tell the user the result of their request
-            // 正常情况下回调每条消息的回调函数
+            // 回调每条消息的回调函数
             batch.done(baseOffset, timestamp, exception);
 
-            // 释放内存空间
+            //
+            /**
+             * 释放buffer 内存空间
+             */
             this.accumulator.deallocate(batch);
 
             if (error != Errors.NONE)
@@ -361,6 +393,10 @@ public class Sender implements Runnable {
      * We can retry a send if the error is transient and the number of attempts taken is fewer than the maximum allowed
      */
     private boolean canRetry(RecordBatch batch, Errors error) {
+        /**
+         * 1 重试次数没有超过设置的上限
+         * 2 RetriableException 有很多实现异常类，必须是可充实的异常发生才能重试比如 LeaderNotAvailableException等
+         */
         return batch.attempts < this.retries && error.exception() instanceof RetriableException;
     }
 
@@ -369,16 +405,19 @@ public class Sender implements Runnable {
      */
     private List<ClientRequest> createProduceRequests(Map<Integer, List<RecordBatch>> collated, long now) {
         List<ClientRequest> requests = new ArrayList<ClientRequest>(collated.size());
+
         for (Map.Entry<Integer, List<RecordBatch>> entry : collated.entrySet())
             requests.add(
                     // 封装 ClientRequest的方法要看一下，稍微有点绕
                     produceRequest(now, entry.getKey(), acks, requestTimeout, entry.getValue())
             );
+
         return requests;
     }
 
     /**
      * Create a produce request from the given record batches
+     * 构造发送请求，挺琐碎的，慢慢看
      */
     private ClientRequest produceRequest(long now, int destination, short acks, int timeout, List<RecordBatch> batches) {
         Map<TopicPartition, ByteBuffer> produceRecordsByPartition = new HashMap<TopicPartition, ByteBuffer>(batches.size());
@@ -390,8 +429,12 @@ public class Sender implements Runnable {
         }
         ProduceRequest request = new ProduceRequest(acks, timeout, produceRecordsByPartition);
         RequestSend send = new RequestSend(Integer.toString(destination),
-                                           this.client.nextRequestHeader(ApiKeys.PRODUCE),
+                                           this.client.nextRequestHeader(ApiKeys.PRODUCE), // *** 请求Produce接口
                                            request.toStruct());
+
+        /**
+         * 构造回调
+         */
         RequestCompletionHandler callback = new RequestCompletionHandler() {
             public void onComplete(ClientResponse response) {
                 // 回调函数

@@ -34,6 +34,7 @@ public class RequestHeader extends AbstractRequestResponse {
     private final short apiKey;
     private final short apiVersion;
     private final String clientId;
+    // 标记全局唯一的请求
     private final int correlationId;
 
     public RequestHeader(Struct header) {

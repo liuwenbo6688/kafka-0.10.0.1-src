@@ -46,7 +46,10 @@ public final class Metadata {
     // 集群信息
     private Cluster cluster;
 
+    // 需要更新元数据的标志位
     private boolean needUpdate;
+
+    //元数据中缓存的topic，意思是拉取过哪些topic
     private final Set<String> topics;
     private final List<Listener> listeners;
     private boolean needMetadataForAllTopics;
@@ -130,6 +133,7 @@ public final class Metadata {
         long remainingWaitMs = maxWaitMs;
 
         while (this.version <= lastVersion) {
+            // 只要当前的version <=  上次的版本号，说明元数据还没拉取回来
 
             /**
              *  如果拉取成功了，那么version版本号，集群元数据的版本号一定会累加，
@@ -137,7 +141,8 @@ public final class Metadata {
              *  此时就是在主线程里，就是要wait阻塞等待最多60s即可
              */
             if (remainingWaitMs != 0)
-                wait(remainingWaitMs);
+                wait(remainingWaitMs); // 阻塞等待
+
             long elapsed = System.currentTimeMillis() - begin;
             if (elapsed >= maxWaitMs)
                 throw new TimeoutException("Failed to update metadata after " + maxWaitMs + " ms.");

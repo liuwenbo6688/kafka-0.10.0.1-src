@@ -29,12 +29,30 @@ import java.security.Principal;
 import org.apache.kafka.common.utils.Utils;
 
 public class KafkaChannel {
+
+    /**
+     * broker.id
+     */
     private final String id;
+
+    /**
+     *  TransportLayer封装底层的SocketChannel
+     */
     private final TransportLayer transportLayer;
+
     private final Authenticator authenticator;
     private final int maxReceiveSize;
+
+    /**
+     *
+     */
     private NetworkReceive receive;
+
+    /**
+     *  交给底层channel发送出去的请求
+     */
     private Send send;
+
 
     public KafkaChannel(String id, TransportLayer transportLayer, Authenticator authenticator, int maxReceiveSize) throws IOException {
         this.id = id;
@@ -144,6 +162,8 @@ public class KafkaChannel {
         if (receive.complete()) {
             receive.payload().rewind();
             result = receive;
+
+            // receive置为空了，可以继续读取数据了
             receive = null;
         }
 
@@ -169,11 +189,12 @@ public class KafkaChannel {
 
         send.writeTo(transportLayer);
 
-        // 全部发送完成
+        // 全部发送完成，拆包问题，如果没有发送完成，就不会去取消关注OP_WRITE， 下一个循环会继续发送数据
         if (send.completed())
             // 发送完之后取消对 OP_WRITE 事件的监听
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
 
+        // 判断这个请求发送是否完毕，有可能只发送了一部分，没有全部发送完毕
         return send.completed();
     }
 

@@ -54,7 +54,14 @@ public class CopyOnWriteMap<K, V> implements ConcurrentMap<K, V> {
         return map.entrySet();
     }
 
-    // 直接读，没有任何锁的限制， 可以实现高并发的读
+
+
+    /**
+     *  直接读，没有任何锁的限制， 可以实现高并发的读
+     *  map结构是volatile，保证多线程可见性
+     * @param k
+     * @return
+     */
     @Override
     public V get(Object k) {
         return map.get(k);
@@ -88,7 +95,9 @@ public class CopyOnWriteMap<K, V> implements ConcurrentMap<K, V> {
     // 写的时候直接 synchronized 来保证线程安全
     @Override
     public synchronized V put(K k, V v) {
+        // 用当前的map构造一个副本，不会影响当前的读操作
         Map<K, V> copy = new HashMap<K, V>(this.map);
+
         V prev = copy.put(k, v);
         this.map = Collections.unmodifiableMap(copy);
         return prev;
@@ -112,7 +121,7 @@ public class CopyOnWriteMap<K, V> implements ConcurrentMap<K, V> {
     @Override
     public synchronized V putIfAbsent(K k, V v) {
         if (!containsKey(k))
-            return put(k, v);
+            return put(k, v);// synchronized 是线程独占的，保证线程安全
         else
             return get(k);
     }

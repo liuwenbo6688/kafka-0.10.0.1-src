@@ -20,7 +20,7 @@ package org.apache.kafka.common;
 public class PartitionInfo {
 
     private final String topic;
-    private final int partition;
+    private final int partition;// 分区号
 
     private final Node leader; // 此分区的leader
     private final Node[] replicas; // 此分区的followers

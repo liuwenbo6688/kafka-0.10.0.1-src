@@ -65,6 +65,8 @@ public class ByteBufferSend implements Send {
 
         if (written < 0)
             throw new EOFException("Wrote negative bytes to channel. This shouldn't happen.");
+
+        //remaining 代表剩余发送的字节大小
         remaining -= written;
         // This is temporary workaround. As Send , Receive interfaces are being used by BlockingChannel.
         // Once BlockingChannel is removed we can make Send, Receive to work with transportLayer rather than

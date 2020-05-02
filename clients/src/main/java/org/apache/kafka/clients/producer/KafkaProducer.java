@@ -144,6 +144,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
 
     // 从broker集群去拉取元数据的Topics
     private final Metadata metadata;
+
     // 缓冲区  负责消息的复杂的缓冲机制
     private final RecordAccumulator accumulator;
     private final Sender sender;
@@ -346,6 +347,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.sender = new Sender(client,
                     this.metadata,
                     this.accumulator,
+                    // max.in.flight.requests.per.connection, 等于1就表示保证发送顺序
                     config.getInt(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION) == 1,
                     config.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG),
                     // acks  默认是1（只要leader写入成功，就算写入成功了）
@@ -513,12 +515,19 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
              * 调用同步阻塞方法，去等待获取topic对应的元数据，
              * 如果此时客户端还没缓存这个topic的元数据，那么一定会发送网络请求到broker去拉取topic的元数据
              * 但是下一次就可以直接根据缓存好的元数据来发送了
+             *
+             * max.block.ms  发送一条数据最长能够阻塞的时间
              */
             long waitedOnMetadataMs = waitOnMetadata(record.topic(), this.maxBlockTimeMs);
 
             long remainingWaitMs = Math.max(0, this.maxBlockTimeMs - waitedOnMetadataMs);
 
-            // 序列化 key 和 value
+            // 走到这里，说明元数据已经拉取成功了
+
+
+            /**
+             * 序列化 key 和 value
+             */
             byte[] serializedKey;
             try {
                 serializedKey = keySerializer.serialize(record.topic(), record.key());
@@ -536,11 +545,15 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                         " specified in value.serializer");
             }
 
+
+
             // 基于获取到的topic元数据，使用Partitioner组件获取消息对应的分区
             int partition = partition(record, serializedKey, serializedValue, metadata.fetch());
 
             // 计算下发送数据的总大小
-            int serializedSize = Records.LOG_OVERHEAD + Record.recordSize(serializedKey, serializedValue);
+            int serializedSize = Records.LOG_OVERHEAD +
+                    Record.recordSize(serializedKey, serializedValue);
+
             // 保证数据大小没有超过限制
             ensureValidRecordSize(serializedSize);
 
@@ -552,7 +565,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             Callback interceptCallback = this.interceptors == null ? callback : new InterceptorCallback<>(callback, this.interceptors, tp);
 
             //  非常关键的步骤：将消息添加到内存缓冲中
-            RecordAccumulator.RecordAppendResult result = accumulator.append(tp, timestamp, serializedKey, serializedValue, interceptCallback, remainingWaitMs);
+            RecordAccumulator.RecordAppendResult result = accumulator.append(tp,
+                                                                            timestamp,
+                                                                            serializedKey,
+                                                                            serializedValue,
+                                                                            interceptCallback,
+                                                                            remainingWaitMs);
 
             if (result.batchIsFull || result.newBatchCreated) {
                 // 如果某个分区对应的batch填满了，或者是新创建了一个batch，此时就会唤醒Sender线程，让他来进行工作，负责发送batch
@@ -597,6 +615,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
 
     /**
      * Wait for cluster metadata including partitions for the given topic to be available.
+     * 这里要明确一点，topic元数据是按需加载，不需要的topic 元数据是不会加载过来的
      * @param topic The topic we want metadata for
      * @param maxWaitMs The maximum time in ms for waiting on the metadata  最大等待延迟时间
      * @return The amount of time we waited in ms
@@ -607,20 +626,29 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.metadata.add(topic);
 
         if (metadata.fetch().partitionsForTopic(topic) != null)
+            // double check一下，可能数据已经被别的线程拉取过来了，若果这样直接返回就可以了
             return 0;
 
         long begin = time.milliseconds();
         long remainingWaitMs = maxWaitMs;
+
         while (metadata.fetch().partitionsForTopic(topic) == null) {
+            // 真正拉取元数据之前，在while开始还要继续检查元数据不存在才会走拉取过程
             log.trace("Requesting metadata update for topic {}.", topic);
             int version = metadata.requestUpdate();
 
-            // 唤醒Sender线程
-            // 是由Sender线程去唤醒拉取元数据，异步拉取，如果拉取成功了，此时版本号version一定会增加
+            /**
+             * 1.  唤醒Sender线程
+             * 是由Sender线程去唤醒拉取元数据，异步拉取，如果拉取成功了，此时版本号version一定会增加
+             */
             sender.wakeup();
 
-            // 一直等待元数据拉取成功
+            /**
+             * 2. 一直等待元数据拉取成功
+             */
             metadata.awaitUpdate(version, remainingWaitMs);
+
+
             long elapsed = time.milliseconds() - begin;
             if (elapsed >= maxWaitMs)
                 // 超时
@@ -637,16 +665,17 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
 
     /**
      * Validate that the record size isn't too large
+     * 验证数据的大小限制，实际使用中可能会触发这个问题， RecordTooLargeException 要熟悉
      */
     private void ensureValidRecordSize(int size) {
         // 发送的数据不能超过请求最大限制 maxRequestSize
         // 也不能超过内存缓冲的大小 totalMemorySize
-        if (size > this.maxRequestSize)
+        if (size > this.maxRequestSize) // max.request.size
             throw new RecordTooLargeException("The message is " + size +
                                               " bytes when serialized which is larger than the maximum request size you have configured with the " +
                                               ProducerConfig.MAX_REQUEST_SIZE_CONFIG +
                                               " configuration.");
-        if (size > this.totalMemorySize)
+        if (size > this.totalMemorySize) // buffer.memory
             throw new RecordTooLargeException("The message is " + size +
                                               " bytes when serialized which is larger than the total memory buffer you have configured with the " +
                                               ProducerConfig.BUFFER_MEMORY_CONFIG +

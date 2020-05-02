@@ -50,8 +50,10 @@ public class PlaintextTransportLayer implements TransportLayer {
     public boolean finishConnect() throws IOException {
         boolean connected = socketChannel.finishConnect();
         if (connected)
-            // 如果建立好连接  1、取消OP_CONNECT监听   2、增加OP_READ监听
-            key.interestOps(key.interestOps() & ~SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
+            // 如果建立好连接
+            key.interestOps(key.interestOps()
+                    & ~SelectionKey.OP_CONNECT  // 1、取消 OP_CONNECT 关注
+                    | SelectionKey.OP_READ);   //  2、增加 OP_READ 关注
         return connected;
     }
 

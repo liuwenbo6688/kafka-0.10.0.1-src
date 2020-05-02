@@ -35,6 +35,14 @@ public class PlaintextChannelBuilder implements ChannelBuilder {
         }
     }
 
+    /**
+     * 封装KafkaChannel
+     * @param  id  channel id  就是broker id
+     * @param  key SelectionKey
+     * @param  maxReceiveSize
+     * @return
+     * @throws KafkaException
+     */
     public KafkaChannel buildChannel(String id, SelectionKey key, int maxReceiveSize) throws KafkaException {
         KafkaChannel channel = null;
         try {

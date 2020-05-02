@@ -21,6 +21,8 @@ import java.util.Map;
  */
 final class ClusterConnectionStates {
     private final long reconnectBackoffMs;
+
+    // 缓存每个节点的连接状态
     private final Map<String, NodeConnectionState> nodeState;
 
     public ClusterConnectionStates(long reconnectBackoffMs) {
@@ -38,9 +40,11 @@ final class ClusterConnectionStates {
     public boolean canConnect(String id, long now) {
         NodeConnectionState state = nodeState.get(id);
         if (state == null)
-            return true;
+            return true; // 之前还没建立过连接
         else
-            return state.state == ConnectionState.DISCONNECTED && now - state.lastConnectAttemptMs >= this.reconnectBackoffMs;
+            // 之前建立过连接，当前状态是断开连接 并且  距离上次连接超过设置的重连间隔
+            return state.state == ConnectionState.DISCONNECTED &&
+                    now - state.lastConnectAttemptMs >= this.reconnectBackoffMs;
     }
 
     /**

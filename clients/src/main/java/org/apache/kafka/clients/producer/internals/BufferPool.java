@@ -56,7 +56,12 @@ public final class BufferPool {
 
     private final Deque<Condition> waiters;
 
-    // 剩余的还可以使用的内存空间的大小
+    /**
+     * availableMemory 初始化32MB
+     *
+     * 如果消息不到16kb，则默认使用free列表里标准化的ByteBuffer
+     * 如果消息大于 16KB，就要从 availableMemory变量申请内存，然后回头释放
+     */
     private long availableMemory;
 
     private final Metrics metrics;
@@ -100,7 +105,7 @@ public final class BufferPool {
      * Allocate a buffer of the given size. This method blocks if there is not enough memory and the buffer pool
      * is configured with blocking mode.
      * 
-     * @param size The buffer size to allocate in bytes
+     * @param size The buffer size to allocate in bytes 申请的内存大小（字节）
      * @param maxTimeToBlockMs The maximum time in milliseconds to block for buffer memory to be available
      * @return The buffer
      * @throws InterruptedException If the thread is interrupted while blocked
@@ -118,6 +123,8 @@ public final class BufferPool {
         try {
             // check if we have a free buffer of the right size pooled
             if (size == poolableSize && !this.free.isEmpty())
+                // 申请的内存等于默认的batch size，并且空闲列表不为空，直接返回一个 ByteBuffer 就可以了
+                // 相当于复用的概念
                 return this.free.pollFirst();
 
             // now check if the request is immediately satisfiable with the
@@ -134,16 +141,21 @@ public final class BufferPool {
                 lock.unlock();
                 return ByteBuffer.allocate(size);
             } else {
+
+                /**
+                 * 不停地写数据，内存耗尽
+                 * 没有足够空间的时候，会阻塞一段时间
+                 */
                 // we are out of memory and will have to block
-                // 没有足够空间的时候，会阻塞一段时间
                 int accumulated = 0;
                 ByteBuffer buffer = null;
                 Condition moreMemory = this.lock.newCondition();
-                long remainingTimeToBlockNs = TimeUnit.MILLISECONDS.toNanos(maxTimeToBlockMs);
-                this.waiters.addLast(moreMemory);
+                long remainingTimeToBlockNs = TimeUnit.MILLISECONDS.toNanos(maxTimeToBlockMs /*等待的最长时间*/ );
+
+                this.waiters.addLast(moreMemory); // 加入等待的Condition队列
                 // loop over and over until we have a buffer or have reserved
                 // enough memory to allocate one
-                while (accumulated < size) {
+                while (accumulated < size) { // 只要累积的内存< 需要申请的内存size，就一直循环
                     long startWaitNs = time.nanoseconds();
                     long timeNs;
                     boolean waitingTimeElapsed;
@@ -229,6 +241,7 @@ public final class BufferPool {
         try {
             if (size == this.poolableSize && size == buffer.capacity()) {
                 buffer.clear();
+                // 放回到 free 队列
                 this.free.add(buffer);
             } else {
                 /**
@@ -238,10 +251,14 @@ public final class BufferPool {
                 this.availableMemory += size;
             }
 
-            // 这个地方很精妙，通知那边等待申请内存的线程，有空间可用了
+            /**
+             * 这个地方很精妙，通知那边等待申请内存的线程，有空间可用了
+             * 线程间通信，相当于 notify
+             */
             Condition moreMem = this.waiters.peekFirst();
             if (moreMem != null)
                 moreMem.signal();
+
         } finally {
             lock.unlock();
         }

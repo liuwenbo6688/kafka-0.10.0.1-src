@@ -17,6 +17,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A wrapper for Thread that sets things up nicely
+ *
+ * 这个类值得我们无学习，在设计后台线程的时候，线程实现和线程分离开来
  */
 public class KafkaThread extends Thread {
 

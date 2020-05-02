@@ -155,6 +155,8 @@ public final class Record {
     }
 
     public static void write(Compressor compressor, long crc, byte attributes, long timestamp, byte[] key, byte[] value, int valueOffset, int valueSize) {
+
+        // 按照规范写入数据
         // write crc
         compressor.putInt((int) (crc & 0xffffffffL));
         // write magic value
@@ -181,6 +183,7 @@ public final class Record {
     }
 
     public static int recordSize(byte[] key, byte[] value) {
+        // recordSize 计算数据的大小，包括头
         return recordSize(key == null ? 0 : key.length, value == null ? 0 : value.length);
     }
 

@@ -49,6 +49,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
+ * 内存缓冲组件
  * This class acts as a queue that accumulates records into {@link org.apache.kafka.common.record.MemoryRecords}
  * instances to be sent to the server.
  * <p>
@@ -59,24 +60,29 @@ public final class RecordAccumulator {
 
     private static final Logger log = LoggerFactory.getLogger(RecordAccumulator.class);
 
+    // 关闭标志位，volatile的
     private volatile boolean closed;
+
     private final AtomicInteger flushesInProgress;
     private final AtomicInteger appendsInProgress;
     // 默认 16KB
     private final int batchSize;
+    // 压缩方式
     private final CompressionType compression;
     private final long lingerMs;
     private final long retryBackoffMs;
 
-    //
+    // 内存缓冲池
     private final BufferPool free;
 
     private final Time time;
 
-    // CopyOnWriteMap  存放数据的
-    // 一个分区对应一个缓存队列
+    // CopyOnWriteMap  存放数据的，适合读多写少
+    // 为什么选择这个数据结构，因为 TopicPartition 是不怎么会变动的
+    // 一个分区对应一个缓存队列，一个队列有多个Batch
     private final ConcurrentMap<TopicPartition, Deque<RecordBatch>> batches;
 
+    // 缓存没有发送完成的 RecordBatch
     private final IncompleteRecordBatches incomplete;
     // The following variables are only accessed by the sender thread, so we don't need to protect them.
     private final Set<TopicPartition> muted;
@@ -165,22 +171,29 @@ public final class RecordAccumulator {
      * @param value The value for the record
      * @param callback The user-supplied callback to execute when the request is complete
      * @param maxTimeToBlock The maximum time in milliseconds to block for buffer memory to be available
+     *
      */
     public RecordAppendResult append(TopicPartition tp,
                                      long timestamp,
                                      byte[] key,
                                      byte[] value,
                                      Callback callback,
-                                     long maxTimeToBlock) throws InterruptedException {
+                                     long maxTimeToBlock /*剩余可以阻塞的时间*/ ) throws InterruptedException {
         // We keep track of the number of appending thread to make sure we do not miss batches in
         // abortIncompleteBatches().
-        appendsInProgress.incrementAndGet();// 当前有多少线程正在尝试把消息写到内存缓冲中去
+        // producer是线程安全的，可以多线程发送数据，记录当前有多少线程正在尝试把消息写到内存缓冲中去
+        appendsInProgress.incrementAndGet();
         try {
             // check if we have an in-progress batch
             //
             Deque<RecordBatch> dq = getOrCreateDeque(tp);
 
-            synchronized (dq) { // 对队列加锁后，尝试将消息放入已有的队列
+
+            /**
+             * 对队列加锁后，尝试将消息放入已有的队列(Deque<RecordBatch>)最后的一个RecordBatch中
+             * 可能队列是空的或者最后的一个RecordBatch是满的，保存时不成功的
+             */
+            synchronized (dq) {
                 if (closed)
                     throw new IllegalStateException("Cannot send after the producer is closed.");
 
@@ -191,12 +204,17 @@ public final class RecordAccumulator {
                     return appendResult;
             }
 
+
+            //  走到这里，说明这个分区队列是空的或者最后的一个RecordBatch空间已满
             // we don't have an in-progress record batch try to allocate a new batch
             // batchSize默认16KB， 申请的内存大小是batchSize和发送数据大小的较大者
             int size = Math.max(this.batchSize, Records.LOG_OVERHEAD + Record.recordSize(key, value));
             log.trace("Allocating a new {} byte message buffer for topic {} partition {}", size, tp.topic(), tp.partition());
 
-            // 分配一块内存
+
+            /**
+             * 向BufferPool申请分配一块内存（ ByteBuffer）
+             */
             ByteBuffer buffer = free.allocate(size, maxTimeToBlock);
 
 
@@ -210,29 +228,37 @@ public final class RecordAccumulator {
 
 
                 /**
-                 * 再尝试一次tryAppend
+                 * 再尝试一次tryAppend， double check，多线程执行，可能有的线程先申请内存成功了
                  * 如果中间已经有别的线程创建了RecordBatch的话，就追加成功了，此时要释放掉之前申请的内存
                  */
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, callback, dq);
                 if (appendResult != null) {
                     // Somebody else found us a batch, return the one we waited for! Hopefully this doesn't happen often...
-                    // 回收内存空间
-                    free.deallocate(buffer);
+                    free.deallocate(buffer); // 回收内存空间
                     return appendResult;
                 }
 
 
-
+                /**
+                 *  MemoryRecords 和 RecordBatch
+                 */
                 MemoryRecords records = MemoryRecords.emptyRecords(buffer, compression, this.batchSize);
                 RecordBatch batch = new RecordBatch(tp, records, time.milliseconds());
-                FutureRecordMetadata future = Utils.notNull(batch.tryAppend(timestamp, key, value, callback, time.milliseconds()));
+
+                FutureRecordMetadata future = Utils.notNull(
+                        // 向 RecordBatch 中写入数据
+                        batch.tryAppend(timestamp, key, value, callback, time.milliseconds())
+                );
 
                 dq.addLast(batch);
+
                 // 加入没有完成的 队列中
                 incomplete.add(batch);
+
                 return new RecordAppendResult(future, dq.size() > 1 || batch.records.isFull(), true);
             }
         } finally {
+            // 当前执行append的线程减掉
             appendsInProgress.decrementAndGet();
         }
     }
@@ -241,14 +267,19 @@ public final class RecordAccumulator {
      * If `RecordBatch.tryAppend` fails (i.e. the record batch is full), close its memory records to release temporary
      * resources (like compression streams buffers).
      */
-    private RecordAppendResult tryAppend(long timestamp, byte[] key, byte[] value, Callback callback, Deque<RecordBatch> deque) {
-        RecordBatch last = deque.peekLast(); // 拿出最后的一个或者最近的一个 RecordBatch
+    private RecordAppendResult tryAppend(long timestamp,
+                                         byte[] key,
+                                         byte[] value,
+                                         Callback callback,
+                                         Deque<RecordBatch> deque) {
+        // 拿出最后的一个或者最近的一个 RecordBatch
+        RecordBatch last = deque.peekLast();
 
         if (last != null) {
             // 写入
             FutureRecordMetadata future = last.tryAppend(timestamp, key, value, callback, time.milliseconds());
             if (future == null)
-                //没有空间的情况执行close
+                // 没有空间的情况执行close
                 last.records.close();
             else
                 return new RecordAppendResult(future, deque.size() > 1 || last.records.isFull(), false);
@@ -314,7 +345,7 @@ public final class RecordAccumulator {
 
         Deque<RecordBatch> deque = getOrCreateDeque(batch.topicPartition);
         synchronized (deque) {
-            // 放到队列头部
+            // 放到队列头部，正常发送时从队尾入队的，所以重试的数据放到头部，是被优先处理
             deque.addFirst(batch);
         }
     }
@@ -341,13 +372,21 @@ public final class RecordAccumulator {
      * </ol>
      */
     public ReadyCheckResult ready(Cluster cluster, long nowMs) {
-        Set<Node> readyNodes = new HashSet<>(); // 可以发送数据的节点，一开始是空的
+
+        /**
+         *  可以发送数据的leader节点
+         *  可以发送数据的节点，一开始是空的
+         */
+        Set<Node> readyNodes = new HashSet<>();
 
         long nextReadyCheckDelayMs = Long.MAX_VALUE;
         boolean unknownLeadersExist = false;
 
-        // exhausted: 用完的; 耗尽的;
-        // 内存是否已经耗尽，可能有人阻塞在写操作，无法申请到内存，在等待新的内存块空闲出来才可以创建新的Batch
+
+        /**
+         * 条件**1**： 内存是否已经耗尽，可能有人阻塞在写操作，无法申请到内存，在等待新的内存块空闲出来才可以创建新的Batch
+         * exhausted: 用完的; 耗尽的;
+         */
         boolean exhausted = this.free.queued() > 0;
 
         for (Map.Entry<TopicPartition, Deque<RecordBatch>> entry : this.batches.entrySet()) {
@@ -360,37 +399,44 @@ public final class RecordAccumulator {
                 // 如果这个分区的leader不知道是谁， unknownLeadersExist字段置为true，后面会进行元数据拉取
                 unknownLeadersExist = true;
             } else if (!readyNodes.contains(leader) && !muted.contains(part)) {
+
                 synchronized (deque) { // 对deque的读和写都是加锁的，还是重量级的synchronized，保证线程的安全性
 
-                    // 每一轮循环只检查第一个batch
+                    // 每一轮循环只检查第一个batch，判断第一个batch是否可以发送
                     RecordBatch batch = deque.peekFirst();
 
                     if (batch != null) {
-
                         /**
+                         * 条件**2** :
                          * 有重试（attempts > 0），并且 上次重试时间 + 重试间隔 > 当前时间，意思就是还不能进行重新发送
                          * 所以叫 backing  off
                          */
                         boolean backingOff = batch.attempts > 0 && batch.lastAttemptMs + retryBackoffMs > nowMs;
 
-
                         long waitedTimeMs = nowMs - batch.lastAttemptMs;// 已经等待的时间  ms
                         long timeToWaitMs = backingOff ? retryBackoffMs : lingerMs;// 最多等待时间  ms
                         long timeLeftMs = Math.max(timeToWaitMs - waitedTimeMs, 0);// 还能等待多少时间 ms
-
-                        // Batch是否已满
-                        // 如果说Dequeue里超过一个Batch了，说明这个peekFirst返回的Batch就一定是已经满的，
+                        /**
+                         * 条件**3** :
+                         * Batch是否已满
+                         * 如果说Dequeue里超过一个Batch了，说明这个peekFirst返回的Batch就一定是已经满的，
+                         */
                         boolean full = deque.size() > 1 || batch.records.isFull();
-
+                        /**
+                         * 条件**4** :
+                         * 超过batch的最长等待时间， 和linger.ms比较
+                         */
                         boolean expired = waitedTimeMs >= timeToWaitMs;
-
                         // 综合算出是否可以发出
-                        boolean sendable = full || expired || exhausted || closed || flushInProgress();
-
+                        boolean sendable = full || expired || exhausted
+                                || closed || flushInProgress();
                         if (sendable && !backingOff) {
                             // 如果可以发送数据，找到leader，这个方法就是找哪些leader可以发送数据
                             readyNodes.add(leader);
                         } else {
+                            /**
+                             *  nextReadyCheckDelayMs:
+                             */
                             // Note that this results in a conservative estimate since an un-sendable partition may have
                             // a leader that will later be found to have sendable data. However, this is good enough
                             // since we'll just wake up and then sleep again for the remaining time.
@@ -398,12 +444,14 @@ public final class RecordAccumulator {
                         }
                     }
                 }
+
+
             }
         }
 
         return new ReadyCheckResult(readyNodes, // 可以发送数据的节点
-                nextReadyCheckDelayMs,
-                unknownLeadersExist);
+                                        nextReadyCheckDelayMs,
+                                        unknownLeadersExist);
     }
 
     /**
@@ -441,14 +489,19 @@ public final class RecordAccumulator {
         if (nodes.isEmpty())
             return Collections.emptyMap();
 
+        /**
+         * 下面这段实现不需要看了，就是遍历每个分区的数据，按brokerId聚合起来，返回 batches 这个结构就行了
+         */
         Map<Integer, List<RecordBatch>> batches = new HashMap<>();
-        for (Node node : nodes) {
+
+        for (Node node : nodes) {// for循环每个节点
             int size = 0;
             List<PartitionInfo> parts = cluster.partitionsForNode(node.id());
             List<RecordBatch> ready = new ArrayList<>();
             /* to make starvation less likely this loop doesn't start at 0 */
             int start = drainIndex = drainIndex % parts.size();
-            do {
+
+            do {// do while
                 PartitionInfo part = parts.get(drainIndex);
                 TopicPartition tp = new TopicPartition(part.topic(), part.partition());
                 // Only proceed if the partition has no in-flight batches.
@@ -485,6 +538,8 @@ public final class RecordAccumulator {
             } while (start != drainIndex);
             batches.put(node.id(), ready);
         }
+
+
         return batches;
     }
 
@@ -497,11 +552,16 @@ public final class RecordAccumulator {
      */
     private Deque<RecordBatch> getOrCreateDeque(TopicPartition tp) {
         Deque<RecordBatch> d = this.batches.get(tp);
+
+        // 队列已经存在，直接返回
         if (d != null)
             return d;
+
         d = new ArrayDeque<>();
 
+        // 线程安全的放入分区的 ArrayDeque
         Deque<RecordBatch> previous = this.batches.putIfAbsent(tp, d);
+
         if (previous == null)
             return d;
         else
@@ -626,8 +686,17 @@ public final class RecordAccumulator {
      * The set of nodes that have at least one complete record batch in the accumulator
      */
     public final static class ReadyCheckResult {
-        public final Set<Node> readyNodes;// 可以发送数据的节点
+
+        /**
+         * 可以发送数据的节点
+         */
+        public final Set<Node> readyNodes;
+
         public final long nextReadyCheckDelayMs;
+
+        /**
+         * 是否有未知的leader
+         */
         public final boolean unknownLeadersExist;
 
         public ReadyCheckResult(Set<Node> readyNodes, long nextReadyCheckDelayMs, boolean unknownLeadersExist) {

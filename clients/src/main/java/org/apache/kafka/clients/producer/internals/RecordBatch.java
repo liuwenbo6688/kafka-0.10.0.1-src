@@ -39,13 +39,16 @@ public final class RecordBatch {
     public final long createdMs;
     public long drainedMs;
     public long lastAttemptMs;// 上一次重试时间，默认是创建出来的时间（重新入队的时间）
-    //
+
+    // 这个batch的内存缓冲结构，意思就是缓存Records的Memory结构
     public final MemoryRecords records;
+
     public final TopicPartition topicPartition;
     public final ProduceRequestResult produceFuture;
     public long lastAppendTime;
     private final List<Thunk> thunks;
     private long offsetCounter = 0L;
+    // 这条消息是否是重试发送的标志位
     private boolean retry;
 
     public RecordBatch(TopicPartition tp, MemoryRecords records, long now) {
@@ -102,7 +105,9 @@ public final class RecordBatch {
         // execute callbacks
         for (int i = 0; i < this.thunks.size(); i++) {
             try {
+                // 每个thunk就代表一条细的回调函数
                 Thunk thunk = this.thunks.get(i);
+
                 if (exception == null) {
                     // If the timestamp returned by server is NoTimestamp, that means CreateTime is used. Otherwise LogAppendTime is used.
                     RecordMetadata metadata = new RecordMetadata(this.topicPartition,  baseOffset, thunk.future.relativeOffset(),
@@ -110,6 +115,7 @@ public final class RecordBatch {
                                                                  thunk.future.checksum(),
                                                                  thunk.future.serializedKeySize(),
                                                                  thunk.future.serializedValueSize());
+                    // 调用消息的回调函数
                     thunk.callback.onCompletion(metadata, null);
                 } else {
                     // 如果超过重试次数，发现还是异常的，那就在回调方法里传入exception，我们要在回调里处理一下
