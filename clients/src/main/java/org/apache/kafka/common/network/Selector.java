@@ -250,7 +250,15 @@ public class Selector implements Selectable {
      * Note that we are not checking if the connection id is valid - since the connection already exists
      */
     public void register(String id, SocketChannel socketChannel) throws ClosedChannelException {
+
+        /**
+         * socketChannel注册到Selector上，关注OP_REA事件
+         */
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_READ);
+
+        /**
+         * 创建 KafkaChannel，加入到缓存map中
+         */
         KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);
         key.attach(channel);
         this.channels.put(id, channel);
@@ -336,6 +344,7 @@ public class Selector implements Selectable {
 
         /**
          * 调用 nioSelector的select方法
+         * 是可以被wakeup唤醒的
          */
         int readyKeys = select(timeout);
 

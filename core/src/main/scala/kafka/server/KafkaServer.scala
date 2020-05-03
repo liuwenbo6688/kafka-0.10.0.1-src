@@ -111,9 +111,25 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
   val brokerState: BrokerState = new BrokerState
 
+
+  /**
+    *
+    */
   var apis: KafkaApis = null
+
+
   var authorizer: Option[Authorizer] = None
+
+
+  /**
+    * 核心组件 socket server
+    * 网络通信服务器
+    */
   var socketServer: SocketServer = null
+
+  /**
+    *
+    */
   var requestHandlerPool: KafkaRequestHandlerPool = null
 
   // 负责磁盘读写的
@@ -125,6 +141,9 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
   var dynamicConfigHandlers: Map[String, ConfigHandler] = null
   var dynamicConfigManager: DynamicConfigManager = null
 
+  /**
+    *
+    */
   var groupCoordinator: GroupCoordinator = null
 
   var kafkaController: KafkaController = null
@@ -225,6 +244,12 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           authZ
         }
 
+
+        /**
+          *  KafkaApis  KafkaRequestHandlerPool  主要负责处理请求
+          *
+          *  KafkaRequestHandlerPool 把请求交给  KafkaApis
+          */
         /* start processing requests */
         apis = new KafkaApis(socketServer.requestChannel,
           replicaManager,  // replicaManager
@@ -237,7 +262,13 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           metrics,
           authorizer)
 
-        requestHandlerPool = new KafkaRequestHandlerPool(config.brokerId, socketServer.requestChannel, apis, config.numIoThreads)
+        requestHandlerPool = new KafkaRequestHandlerPool(
+          config.brokerId,
+          socketServer.requestChannel,
+          apis,
+          config.numIoThreads)
+
+
         brokerState.newState(RunningAsBroker)
 
         Mx4jLoader.maybeLoad()

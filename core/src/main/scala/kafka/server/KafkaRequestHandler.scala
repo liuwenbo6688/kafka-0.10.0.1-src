@@ -1,19 +1,19 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+  * Licensed to the Apache Software Foundation (ASF) under one or more
+  * contributor license agreements.  See the NOTICE file distributed with
+  * this work for additional information regarding copyright ownership.
+  * The ASF licenses this file to You under the Apache License, Version 2.0
+  * (the "License"); you may not use this file except in compliance with
+  * the License.  You may obtain a copy of the License at
+  *
+  * http://www.apache.org/licenses/LICENSE-2.0
+  *
+  * Unless required by applicable law or agreed to in writing, software
+  * distributed under the License is distributed on an "AS IS" BASIS,
+  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
 
 package kafka.server
 
@@ -25,22 +25,22 @@ import com.yammer.metrics.core.Meter
 import org.apache.kafka.common.utils.Utils
 
 /**
- * A thread that answers kafka requests.
+  * A thread that answers kafka requests.
   * 处理请求的工作线程  ， 也是一个Runnable
- */
+  */
 class KafkaRequestHandler(id: Int,
                           brokerId: Int,
                           val aggregateIdleMeter: Meter,
                           val totalHandlerThreads: Int,
                           val requestChannel: RequestChannel,
                           /* 封装了处理各种不同请求的业务逻辑 */
-                          apis: KafkaApis ) extends Runnable with Logging {
+                          apis: KafkaApis) extends Runnable with Logging {
   this.logIdent = "[Kafka Request Handler " + id + " on Broker " + brokerId + "], "
 
   def run() {
-    while(true) {
+    while (true) {
       try {
-        var req : RequestChannel.Request = null
+        var req: RequestChannel.Request = null
         while (req == null) {
           // We use a single meter for aggregate idle percentage for the thread pool.
           // Since meter is calculated as total_recorded_value / time_window and
@@ -48,22 +48,34 @@ class KafkaRequestHandler(id: Int,
           // time should be discounted by # threads.
           val startSelectTime = SystemTime.nanoseconds
 
-          // 拿到要处理的请求
+
+          /**
+            * 不断地从requestChannel 拿到接收的请求 Request
+            * 然后交给  KafkaApis 处理
+            */
           req = requestChannel.receiveRequest(300)
+
+
           val idleTime = SystemTime.nanoseconds - startSelectTime
           aggregateIdleMeter.mark(idleTime / totalHandlerThreads)
         }
 
-        if(req eq RequestChannel.AllDone) {
+        if (req eq RequestChannel.AllDone) {
           debug("Kafka request handler %d on broker %d received shut down command".format(
             id, brokerId))
           return
         }
         req.requestDequeueTimeMs = SystemTime.milliseconds
         trace("Kafka request handler %d on broker %d handling request %s".format(id, brokerId, req))
-        // 转交给  KafkaApis 处理
-        // KafkaApis 封装了处理各种不同请求的业务逻辑
+
+
+        /**
+          *   转交给  KafkaApis 处理
+          *   KafkaApis 封装了处理各种不同请求的业务逻辑
+          */
         apis.handle(req)
+
+
       } catch {
         case e: Throwable => error("Exception when handling request", e)
       }
@@ -82,19 +94,22 @@ class KafkaRequestHandlerPool(val brokerId: Int,
   private val aggregateIdleMeter = newMeter("RequestHandlerAvgIdlePercent", "percent", TimeUnit.NANOSECONDS)
 
   this.logIdent = "[Kafka Request Handler on Broker " + brokerId + "], "
+
+  // numThreads(num.io.threads) ,默认是8个
   val threads = new Array[Thread](numThreads)
   val runnables = new Array[KafkaRequestHandler](numThreads)
-  for(i <- 0 until numThreads) {
+  for (i <- 0 until numThreads) {
     runnables(i) = new KafkaRequestHandler(i, brokerId, aggregateIdleMeter, numThreads, requestChannel, apis)
     threads(i) = Utils.daemonThread("kafka-request-handler-" + i, runnables(i))
     threads(i).start()
   }
 
+
   def shutdown() {
     info("shutting down")
-    for(handler <- runnables)
+    for (handler <- runnables)
       handler.shutdown
-    for(thread <- threads)
+    for (thread <- threads)
       thread.join
     info("shut down completely")
   }

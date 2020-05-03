@@ -176,10 +176,14 @@ object RequestChannel extends Logging {
   case object CloseConnectionAction extends ResponseAction
 }
 
-class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requests*/) extends KafkaMetricsGroup {
+
+//=============================================RequestChannel==========================================================================
+
+class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requests  队列的大小*/) extends KafkaMetricsGroup {
   private var responseListeners: List[(Int) => Unit] = Nil
 
   // 请求队列, 这是一个阻塞队列
+  //
   private val requestQueue = new ArrayBlockingQueue[RequestChannel.Request](queueSize)
 
   // 响应结果队列
@@ -209,6 +213,7 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requ
 
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
   def sendRequest(request: RequestChannel.Request) {
+    // 放到阻塞队列中
     requestQueue.put(request)
   }
 
@@ -257,6 +262,10 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requ
     requestQueue.clear
   }
 }
+
+//=========================================RequestChannel==============================================================================
+
+
 
 object RequestMetrics {
   val metricsMap = new scala.collection.mutable.HashMap[String, RequestMetrics]
