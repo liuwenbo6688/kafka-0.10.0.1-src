@@ -91,6 +91,7 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
   }
 
   /* the number of eight-byte entries currently in the index */
+  // 当前有多少条稀疏索引
   @volatile
   private[this] var _entries = mmap.position / 8
 
@@ -210,7 +211,9 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
   }
   
   /**
-   * Append an entry for the given offset/location pair to the index. This entry must have a larger offset than all subsequent entries.
+   * Append an entry for the given offset/location pair to the index.
+    * 写入 这条数据的offset 和 对应的日志文件物理位置 到稀疏索引
+    * This entry must have a larger offset than all subsequent entries.
    */
   def append(offset: Long, position: Int) {
     inLock(lock) {
@@ -221,7 +224,7 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
         //  MappedByteBuffer
         // 基于 os cache来进行的，也就是写入的其实是内存，而不是底层的磁盘文件
         // 一个稀疏索引，对应一个物理位置
-        mmap.putInt((offset - baseOffset).toInt)// 写的是offset的差值，可以减少写入的数据大小
+        mmap.putInt((offset - baseOffset).toInt) // 写的是offset的差值，可以减少写入的数据大小
         mmap.putInt(position)
 
         // _entries +1

@@ -382,6 +382,9 @@ class Log(val dir: File,
         }
 
         // maybe roll the log if this segment is full
+        /**
+          * 如果一个segment写满了，可能会创建一个新的segment
+          */
         val segment = maybeRoll(validMessages.sizeInBytes)
 
         // now append to the log
@@ -389,14 +392,14 @@ class Log(val dir: File,
         segment.append(appendInfo.firstOffset, validMessages)
 
         // increment the log end offset
-        // 更新 LEO为最后的offset+1
+        // 更新 LEO为刚写入的这一批数据的最后一条数据的offset +1
         updateLogEndOffset(appendInfo.lastOffset + 1)
 
         trace("Appended message set to log %s with first offset: %d, next offset: %d, and messages: %s"
           .format(this.name, appendInfo.firstOffset, nextOffsetMetadata.messageOffset, validMessages))
 
         // 固定的时间频率刷新到磁盘上
-        // flush.messages 自己配置的，默认值是maxvalue
+        // flush.messages 自己配置的，配置文件配置
         if (unflushedMessages >= config.flushInterval)
           flush()
 
@@ -627,6 +630,10 @@ class Log(val dir: File,
    */
   private def maybeRoll(messagesSize: Int): LogSegment = {
     val segment = activeSegment
+
+    /**
+      *
+      */
     if (segment.size > config.segmentSize - messagesSize ||
         segment.size > 0 && time.milliseconds - segment.created > config.segmentMs - segment.rollJitterMs ||
         segment.index.isFull) {
@@ -639,9 +646,10 @@ class Log(val dir: File,
                     segment.index.maxEntries,
                     time.milliseconds - segment.created,
                     config.segmentMs - segment.rollJitterMs))
-      //
+
       roll()
     } else {
+
       segment
     }
   }
@@ -658,10 +666,11 @@ class Log(val dir: File,
       // LEO永远大于最后一条数据的offset
       val newOffset = logEndOffset
 
-      // 日志文件 + 索引文件
+      // 日志文件 .log  +  索引文件 .index
       // 在分区目录下，构建一个新的文件，用LEO作为文件名就可以了
       val logFile = logFilename(dir, newOffset)
       val indexFile = indexFilename(dir, newOffset)
+
       for(file <- List(logFile, indexFile); if file.exists) {
         warn("Newly rolled segment file " + file.getName + " already exists; deleting it first")
         file.delete()
@@ -675,6 +684,9 @@ class Log(val dir: File,
         }
       }
 
+      /**
+        * 初始化一个  LogSegment
+        */
       val segment = new LogSegment(dir,
                                    startOffset = newOffset,
                                    indexIntervalBytes = config.indexInterval,
@@ -684,9 +696,12 @@ class Log(val dir: File,
                                    fileAlreadyExists = false,
                                    initFileSize = initFileSize,
                                    preallocate = config.preallocate)
+
       val prev = addSegment(segment)
+
       if(prev != null)
         throw new KafkaException("Trying to roll a new log segment for topic partition %s with start offset %d while it already exists.".format(name, newOffset))
+
       // We need to update the segment base offset and append position data of the metadata when log rolls.
       // The next offset should not change.
       updateLogEndOffset(nextOffsetMetadata.messageOffset)
@@ -720,9 +735,11 @@ class Log(val dir: File,
       return
     debug("Flushing log '" + name + " up to offset " + offset + ", last flushed: " + lastFlushTime + " current time: " +
           time.milliseconds + " unflushed = " + unflushedMessages)
-    //
+
+    /**
+      * 把之前flush的offset 到 当前要flush的offset 的日志段全部找出来，然后刷入磁盘
+      */
     for(segment <- logSegments(this.recoveryPoint, offset))
-      //
       segment.flush()
 
     lock synchronized {
@@ -802,6 +819,8 @@ class Log(val dir: File,
 
   /**
    * The active segment that is currently taking appends
+    * 当前有效的 segment
+    * 就是当前正在写入的 segment
    */
   def activeSegment = segments.lastEntry.getValue
 
@@ -985,6 +1004,9 @@ object Log {
    * Parse the topic and partition out of the directory name of a log
    */
   def parseTopicPartitionName(dir: File): TopicAndPartition = {
+    /**
+      * 分区目录的格式是 topic-partition序号，test-0，test-1，test-n
+      */
     val name: String = dir.getName
     if (name == null || name.isEmpty || !name.contains('-')) {
       throwException(dir)

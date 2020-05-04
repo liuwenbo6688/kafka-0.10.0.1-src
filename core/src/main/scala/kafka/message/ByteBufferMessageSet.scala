@@ -301,6 +301,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
       */
 
 
+    // 为什么要  mark() 和 reset()
     buffer.mark()
 
     var written = 0
@@ -311,6 +312,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
 
     // 写完数据之后重新reset
     buffer.reset()
+
     written
   }
 

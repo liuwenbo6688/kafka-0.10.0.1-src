@@ -802,7 +802,12 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean) extends Abstra
   /** ********* Log Configuration ***********/
   val autoCreateTopicsEnable = getBoolean(KafkaConfig.AutoCreateTopicsEnableProp)
   val numPartitions = getInt(KafkaConfig.NumPartitionsProp)
+
+  /**
+    *  log.dirs、log.dir
+    */
   val logDirs = CoreUtils.parseCsvList( Option(getString(KafkaConfig.LogDirsProp)).getOrElse(getString(KafkaConfig.LogDirProp)))
+
   val logSegmentBytes = getInt(KafkaConfig.LogSegmentBytesProp)
   val logFlushIntervalMessages = getLong(KafkaConfig.LogFlushIntervalMessagesProp)
   val logCleanerThreads = getInt(KafkaConfig.LogCleanerThreadsProp)

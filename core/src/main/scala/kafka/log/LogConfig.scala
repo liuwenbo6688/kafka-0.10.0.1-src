@@ -80,7 +80,10 @@ case class LogConfig(props: java.util.Map[_, _]) extends AbstractConfig(LogConfi
   val minCleanableRatio = getDouble(LogConfig.MinCleanableDirtyRatioProp)
   val compact = getString(LogConfig.CleanupPolicyProp).toLowerCase(Locale.ROOT) != LogConfig.Delete
   val uncleanLeaderElectionEnable = getBoolean(LogConfig.UncleanLeaderElectionEnableProp)
+
+  // min.insync.replicas
   val minInSyncReplicas = getInt(LogConfig.MinInSyncReplicasProp)
+
   val compressionType = getString(LogConfig.CompressionTypeProp).toLowerCase(Locale.ROOT)
   val preallocate = getBoolean(LogConfig.PreAllocateEnableProp)
   val messageFormatVersion = ApiVersion(getString(LogConfig.MessageFormatVersionProp))

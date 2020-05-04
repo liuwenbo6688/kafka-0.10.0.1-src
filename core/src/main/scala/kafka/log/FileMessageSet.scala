@@ -302,7 +302,7 @@ class FileMessageSet private[kafka](@volatile var file: File,
     /**
       *  ByteBufferMessageSet  肯定知道是封装了这个分区partition本次要写入的所有数据
       *  此时调用这个方法，其实就是把这些数据写入到一个Channel里去
-      *  这个channel想想就知道，一定是对接着底层的磁盘文件的
+      *  这个channel想想就知道，一定是对接着底层的 .log磁盘文件的
       *  而且还要考虑下，这个channel刚开始写入的时候，是不是写入的os cache中
       */
     val written = messages.writeFullyTo(channel)

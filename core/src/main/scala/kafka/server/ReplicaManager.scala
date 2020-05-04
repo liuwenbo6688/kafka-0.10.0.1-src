@@ -110,14 +110,14 @@ class ReplicaManager(val config: KafkaConfig,
                      jTime: JTime,
                      val zkUtils: ZkUtils,
                      scheduler: Scheduler,
-                     val logManager: LogManager, // 重要组件
+                     val logManager: LogManager, // 重要组件，管理磁盘文件的
                      val isShuttingDown: AtomicBoolean,
                      threadNamePrefix: Option[String] = None) extends Logging with KafkaMetricsGroup {
   /* epoch of the controller that last changed the leader */
   @volatile var controllerEpoch: Int = KafkaController.InitialControllerEpoch - 1
   private val localBrokerId = config.brokerId
 
-  //  保存当前这台 broker 上存储的所有的 partition
+  //  保存当前这台 broker 上存储的所有的 partition,如何初始化的？
   private val allPartitions = new Pool[(String, Int), Partition](valueFactory = Some { case (t, p) =>
     new Partition(t, p, time, this)
   })
@@ -233,10 +233,16 @@ class ReplicaManager(val config: KafkaConfig,
 
   def startup() {
     // start ISR expiration thread
-    // 10s中执行一次，执行 maybeShrinkIsr
-    scheduler.schedule("isr-expiration", maybeShrinkIsr, period = config.replicaLagTimeMaxMs, unit = TimeUnit.MILLISECONDS)
+    // 10s中执行一次，执行 maybeShrinkIsr ,isr列表的过期检查
+    scheduler.schedule("isr-expiration",
+                                  maybeShrinkIsr,
+                                  period = config.replicaLagTimeMaxMs,
+                                  unit = TimeUnit.MILLISECONDS)
 
-    scheduler.schedule("isr-change-propagation", maybePropagateIsrChanges, period = 2500L, unit = TimeUnit.MILLISECONDS)
+    scheduler.schedule("isr-change-propagation",
+                                  maybePropagateIsrChanges,
+                                  period = 2500L,
+                                  unit = TimeUnit.MILLISECONDS)
   }
 
   def stopReplica(topic: String, partitionId: Int, deletePartition: Boolean): Short  = {
@@ -343,28 +349,38 @@ class ReplicaManager(val config: KafkaConfig,
   def appendMessages(timeout: Long,
                      requiredAcks: Short,
                      internalTopicsAllowed: Boolean,
-                     messagesPerPartition: Map[TopicPartition, MessageSet],
+                     messagesPerPartition: Map[TopicPartition, MessageSet], // 每个分区对应一个 MessageSet
                      responseCallback: Map[TopicPartition, PartitionResponse] => Unit) {
 
-    if (isValidRequiredAcks(requiredAcks) ) {//是否是有效的acks？？？？
+    if (isValidRequiredAcks(requiredAcks) ) {//是否是有效的acks，只能是 -1 ，0， 1
       val sTime = SystemTime.milliseconds
 
-      // 直接调用 appendToLocalLog 将数据写入每个分区的磁盘文件中
-      // 然后会获取到本地磁盘文件写入的每个结果
+
+      /**
+        * 直接调用 appendToLocalLog()方法将数据写入每个分区的磁盘文件中
+        * 然后会获取到本地磁盘文件写入的每个结果
+        */
       val localProduceResults = appendToLocalLog(internalTopicsAllowed, messagesPerPartition, requiredAcks)
 
 
       debug("Produce to local log in %d ms".format(SystemTime.milliseconds - sTime))
 
+      // produceStatus =  Map[TopicPartition, ProducePartitionStatus]
       val produceStatus = localProduceResults.map { case (topicPartition, result) =>
         topicPartition ->
-                ProducePartitionStatus(
-                  result.info.lastOffset + 1, // required offset
-                  new PartitionResponse(result.errorCode, result.info.firstOffset, result.info.timestamp)) // response status
+                  ProducePartitionStatus(
+                          result.info.lastOffset + 1, // required offset 就是LEO
+                          new PartitionResponse(result.errorCode,// 是否有异常
+                                                result.info.firstOffset,
+                                                result.info.timestamp)
+                  ) // response status
       }
 
       // 是否需要等follower同步成功，
       if (delayedRequestRequired(requiredAcks, messagesPerPartition, localProduceResults)) {
+        /**
+          *
+          */
         // 延迟调度，时间轮
         // create delayed produce operation
         val produceMetadata = ProduceMetadata(requiredAcks, produceStatus)
@@ -380,7 +396,14 @@ class ReplicaManager(val config: KafkaConfig,
 
       } else {
         // we can respond immediately
+        // 可以立即返回响应
         val produceResponseStatus = produceStatus.mapValues(status => status.responseStatus)
+
+        /**
+          * responseCallback回调函数是一开始传入的，就是scala的函数式编程
+          *
+          * KafkaApis#handleProducerRequest() 中定义的
+          */
         responseCallback(produceResponseStatus)
       }
     } else {
@@ -403,7 +426,7 @@ class ReplicaManager(val config: KafkaConfig,
   // 3. at least one partition append was successful (fewer errors than partitions)
   private def delayedRequestRequired(requiredAcks: Short, messagesPerPartition: Map[TopicPartition, MessageSet],
                                        localProduceResults: Map[TopicPartition, LogAppendResult]): Boolean = {
-    requiredAcks == -1 &&
+    requiredAcks == -1 /*all 写入全部follower才行*/ &&
     messagesPerPartition.size > 0 &&
     localProduceResults.values.count(_.error.isDefined) < messagesPerPartition.size
   }
@@ -437,17 +460,23 @@ class ReplicaManager(val config: KafkaConfig,
           LogAppendInfo.UnknownLogAppendInfo,
           Some(new InvalidTopicException("Cannot append to internal topic %s".format(topicPartition.topic)))))
       } else {
-        //
+        // 正常情况，走这里，非内部topic的情况
         try {
+
+
           val partitionOpt = getPartition(topicPartition.topic, topicPartition.partition)
           val info = partitionOpt match {
             case Some(partition) =>
-              // 调用 partition的方法，将属于partition的数据写入分区对应的磁盘文件
+
+              /**
+                * 调用 partition的方法，将属于partition的数据写入分区对应的磁盘文件
+                */
               partition.appendMessagesToLeader(messages.asInstanceOf[ByteBufferMessageSet], requiredAcks)
 
             case None => throw new UnknownTopicOrPartitionException("Partition %s doesn't exist on %d"
               .format(topicPartition, localBrokerId))
           }
+
 
           val numAppendedMessages =
             if (info.firstOffset == -1L || info.lastOffset == -1L)
@@ -463,6 +492,7 @@ class ReplicaManager(val config: KafkaConfig,
 
           trace("%d bytes written to log %s-%d beginning at offset %d and ending at offset %d"
             .format(messages.sizeInBytes, topicPartition.topic, topicPartition.partition, info.firstOffset, info.lastOffset))
+          // 返回每个分区写入的结果 LogAppendResult
           (topicPartition, LogAppendResult(info))
         } catch {
           // 异常的捕获
@@ -479,6 +509,7 @@ class ReplicaManager(val config: KafkaConfig,
                    _: CorruptRecordException |
                    _: InvalidMessageException |
                    _: InvalidTimestampException) =>
+            // 如果发生异常，会把error封装到LogAppendResult中
             (topicPartition, LogAppendResult(LogAppendInfo.UnknownLogAppendInfo, Some(e)))
           case t: Throwable =>
             BrokerTopicStats.getBrokerTopicStats(topicPartition.topic).failedProduceRequestRate.mark()

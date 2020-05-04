@@ -431,14 +431,16 @@ class KafkaApis(val requestChannel: RequestChannel,
         case (topicPartition, buffer) => (topicPartition, new ByteBufferMessageSet(buffer))
       }
 
-      // 调用 replicaManager将消息写入副本中，leader 和follower都是replica
       // call the replica manager to append messages to the replicas
-      // 生产数据的入口
-      replicaManager.appendMessages(produceRequest.timeout.toLong,
-                                produceRequest.acks, // 著名的acks
-                                internalTopicsAllowed,
-                                authorizedMessagesPerPartition, //
-                                sendResponseCallback)
+      /**
+        * 调用 replicaManager将消息写入副本中，leader 和follower都是replica
+        * 生产数据的入口
+        */
+      replicaManager.appendMessages(produceRequest.timeout.toLong,// 超时时间
+                                    produceRequest.acks,  // 著名的acks
+                                    internalTopicsAllowed,
+                                    authorizedMessagesPerPartition, // 有权限控制的，授权的topic才能写入
+                                    sendResponseCallback /*返回响应的回调函数*/)
 
       // if the request is put into the purgatory, it will have a held reference
       // and hence cannot be garbage collected; hence we clear its data here in

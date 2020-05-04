@@ -52,7 +52,7 @@ import java.util.concurrent.{ExecutionException, ExecutorService, Executors, Fut
  * A background thread handles log retention by periodically truncating excess log segments.
  */
 @threadsafe
-class LogManager(val logDirs: Array[File], // log.dirs
+class LogManager(val logDirs: Array[File], // log.dirs ，可以有多个目录，这个目录下面就是很多分区目录（topic-partitionId）
                  val topicConfigs: Map[String, LogConfig],
                  val defaultConfig: LogConfig,
                  val cleanerConfig: CleanerConfig,
@@ -70,13 +70,14 @@ class LogManager(val logDirs: Array[File], // log.dirs
   private val logCreationOrDeletionLock = new Object
 
   /**
-    *  每个分区对应一个 Log
+    *  每个分区对应一个 Log 对象
     */
   private val logs = new Pool[TopicAndPartition, Log]()
 
   createAndValidateLogDirs(logDirs)
   private val dirLocks = lockLogDirs(logDirs)
   private val recoveryPointCheckpoints = logDirs.map(dir => (dir, new OffsetCheckpoint(new File(dir, RecoveryPointCheckpointFile)))).toMap
+
 
   /**
     * 这个步骤一定是扫描你配置的那个logDir下的目录和文件
@@ -85,6 +86,9 @@ class LogManager(val logDirs: Array[File], // log.dirs
     */
   loadLogs()
 
+  /**
+    *  LogCleaner , 数据定期清理
+    */
   // public, so we can access this from kafka.admin.DeleteTopicTest
   val cleaner: LogCleaner =
     if(cleanerConfig.enableCleaner)
@@ -128,10 +132,14 @@ class LogManager(val logDirs: Array[File], // log.dirs
     }
   }
   
+
+
   /**
-   * Recover and load all logs in the given data directories
-    *
-   */
+    * Recover and load all logs in the given data directories
+    * 这个步骤一定是扫描你配置的那个logDir下的目录和文件
+    * 根据目录和文件的格式，加载出来，当前自己本地存储了哪些分区的Log
+    * 把每个Log的信息实例化成对象，放在内存里
+    */
   private def loadLogs(): Unit = {
     info("Loading logs.")
 
@@ -169,14 +177,21 @@ class LogManager(val logDirs: Array[File], // log.dirs
         logDir <- dirContent if logDir.isDirectory
       } yield {
         CoreUtils.runnable {
+          // 这个方法当做线程来执行
+
           debug("Loading log '" + logDir.getName + "'")
 
           // topic-partitionId，根据这种格式解析目录
           val topicPartition = Log.parseTopicPartitionName(logDir)
+
           val config = topicConfigs.getOrElse(topicPartition.topic, defaultConfig)
           val logRecoveryPoint = recoveryPoints.getOrElse(topicPartition, 0L)
 
-          val current = new Log(logDir, config, logRecoveryPoint, scheduler, time)
+          /**
+            * 初始化这个分区的Log，放到logs池子中
+            * 这个Log初始化过程中到底做了什么
+            */
+          val current = new Log(logDir/*分区目录*/, config/*分区的配置*/, logRecoveryPoint, scheduler, time)
           val previous = this.logs.put(topicPartition, current)
 
           if (previous != null) {
@@ -187,6 +202,7 @@ class LogManager(val logDirs: Array[File], // log.dirs
         }
       }
 
+      // 提交任务
       jobs(cleanShutdownFile) = jobsForDir.map(pool.submit).toSeq
     }
 

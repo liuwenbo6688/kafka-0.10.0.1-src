@@ -54,19 +54,21 @@ class LogSegment(val log: FileMessageSet,
   private var bytesSinceLastIndexEntry = 0
 
   def this(dir: File, startOffset: Long, indexIntervalBytes: Int, maxIndexSize: Int, rollJitterMs: Long, time: Time, fileAlreadyExists: Boolean = false, initFileSize: Int = 0, preallocate: Boolean = false) =
+
     this(
-      // FileMessageSet
+
+      // FileMessageSet ，里面会初始化一个 filechannel
       new FileMessageSet(
-        file = Log.logFilename(dir, startOffset),
+        file = Log.logFilename(dir, startOffset), // log 的File对象
         fileAlreadyExists = fileAlreadyExists,
         initFileSize = initFileSize,
         preallocate = preallocate),
 
-         new OffsetIndex(Log.indexFilename(dir, startOffset), baseOffset = startOffset, maxIndexSize = maxIndexSize),
-         startOffset,
-         indexIntervalBytes,
-         rollJitterMs,
-         time)
+      new OffsetIndex(Log.indexFilename(dir, startOffset), baseOffset = startOffset, maxIndexSize = maxIndexSize),
+      startOffset,
+      indexIntervalBytes,
+      rollJitterMs,
+      time)
 
   /* Return the size in bytes of this log segment */
   def size: Long = log.sizeInBytes()
@@ -89,16 +91,15 @@ class LogSegment(val log: FileMessageSet,
       // 先写index文件  index本质是一个稀疏索引
       // indexIntervalBytes 默认 4096，也就是每写入4096条数据写入一条索引
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
-
         /**
-          *
+          * OffsetIndex的append，追加稀疏索引
           */
         index.append(offset, log.sizeInBytes())
-        this.bytesSinceLastIndexEntry = 0
+        this.bytesSinceLastIndexEntry = 0 // 重新置为0，下次到4096的时候，再写一条系数索引
       }
 
 
-      // 这就是顺序写入数据
+      // 这就是顺序写入数据， ByteBufferMessageSet封装了本次写入的全部数据
       // append the messages
       log.append(messages)
 

@@ -44,7 +44,7 @@ class Partition(val topic: String,
                 time: Time,
                 replicaManager: ReplicaManager) extends Logging with KafkaMetricsGroup {
 
-  // 当前的brokerId
+  // 当前节点的brokerId
   private val localBrokerId = replicaManager.config.brokerId
 
   private val logManager = replicaManager.logManager
@@ -58,7 +58,11 @@ class Partition(val topic: String,
   private val leaderIsrUpdateLock = new ReentrantReadWriteLock()
   private var zkVersion: Int = LeaderAndIsr.initialZKVersion
   @volatile private var leaderEpoch: Int = LeaderAndIsr.initialLeaderEpoch - 1
+
+  // partition的leader brokerId
   @volatile var leaderReplicaIdOpt: Option[Int] = None
+
+  // 当前分区的isr列表
   @volatile var inSyncReplicas: Set[Replica] = Set.empty[Replica]
 
   /* Epoch of the controller that last changed the leader. This needs to be initialized correctly upon broker startup.
@@ -486,18 +490,23 @@ class Partition(val topic: String,
       val leaderReplicaOpt = leaderReplicaIfLocal()
       leaderReplicaOpt match {
         case Some(leaderReplica) =>
+          /**
+            * 分区的leader就是当前节点
+            */
           val log = leaderReplica.log.get
           val minIsr = log.config.minInSyncReplicas
           val inSyncSize = inSyncReplicas.size
 
           // Avoid writing to leader if there are not enough insync replicas to make it safe
-          if (inSyncSize < minIsr && requiredAcks == -1) {
+          if (inSyncSize < minIsr && requiredAcks == -1) {//
             throw new NotEnoughReplicasException("Number of insync replicas for partition [%s,%d] is [%d], below required minimum [%d]"
               .format(topic, partitionId, inSyncSize, minIsr))
           }
 
 
-          // 获取这个Partition对应的Log,基于这个Log对象把数据写入几进去
+          /**
+            * 获取这个Partition对应的Log, 基于这个Log对象把数据写入进去
+            */
           val info = log.append(messages, assignOffsets = true)
 
 
