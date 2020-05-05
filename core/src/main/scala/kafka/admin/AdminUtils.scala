@@ -399,8 +399,11 @@ object AdminUtils extends Logging {
                   replicationFactor: Int,
                   topicConfig: Properties = new Properties,
                   rackAwareMode: RackAwareMode = RackAwareMode.Enforced) {
+    //
     val brokerMetadatas = getBrokerMetadatas(zkUtils, rackAwareMode)
+    //
     val replicaAssignment = AdminUtils.assignReplicasToBrokers(brokerMetadatas, partitions, replicationFactor)
+    //
     AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, replicaAssignment, topicConfig)
   }
 
@@ -440,8 +443,12 @@ object AdminUtils extends Logging {
     writeTopicPartitionAssignment(zkUtils, topic, partitionReplicaAssignment, update)
   }
 
-  private def writeTopicPartitionAssignment(zkUtils: ZkUtils, topic: String, replicaAssignment: Map[Int, Seq[Int]], update: Boolean) {
+  private def writeTopicPartitionAssignment(zkUtils: ZkUtils, topic: String,
+                                            replicaAssignment: Map[Int, Seq[Int]], // 分区： 每个分区的副本分配给哪些broker
+                                            update: Boolean) {
     try {
+
+      // 直接把分区分配方案写入的zookeeper中  /brokers/topics/{topic}
       val zkPath = getTopicPath(topic)
       val jsonPartitionData = zkUtils.replicaAssignmentZkData(replicaAssignment.map(e => (e._1.toString -> e._2)))
 

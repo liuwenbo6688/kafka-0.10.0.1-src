@@ -76,11 +76,15 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
   // register topic and partition change listeners
   def registerListeners() {
-    //
+
+    /**
+      * 监听topic的变化
+      */
     registerTopicChangeListener()
 
+
     //
-    if(controller.config.deleteTopicEnable)
+    if (controller.config.deleteTopicEnable)
       registerDeleteTopicListener()
   }
 
@@ -207,8 +211,15 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
               // initialize leader and isr path for new partition
               initializeLeaderAndIsrForPartition(topicAndPartition)
             case OfflinePartition =>
+
+              /**
+                *
+                */
               electLeaderForPartition(topic, partition, leaderSelector)
             case OnlinePartition => // invoked when the leader needs to be re-elected
+              /**
+                *
+                */
               electLeaderForPartition(topic, partition, leaderSelector)
             case _ => // should never come here since illegal previous states are checked above
           }
@@ -347,6 +358,9 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
           throw new StateChangeFailedException(failMsg)
         }
         // elect new leader or throw exception
+        /**
+          *
+          */
         val (leaderAndIsr, replicas) = leaderSelector.selectLeader(topicAndPartition, currentLeaderAndIsr)
         val (updateSucceeded, newVersion) = ReplicationUtils.updateLeaderAndIsr(zkUtils, topic, partition,
           leaderAndIsr, controller.epoch, currentLeaderAndIsr.zkVersion)
@@ -437,7 +451,11 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
             controllerContext.allTopics = currentChildren
 
-            //
+
+            /**
+              * 获取分区副本分配方案：
+              * [TopicAndPartition, Seq[Int]]  每个partition对应的brokerid
+              */
             val addedPartitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(newTopics.toSeq)
 
             controllerContext.partitionReplicaAssignment = controllerContext.partitionReplicaAssignment.filter(p =>
@@ -448,6 +466,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
             if(newTopics.size > 0)
               controller.onNewTopicCreation(newTopics, addedPartitionReplicaAssignment.keySet.toSet)
+
           } catch {
             case e: Throwable => error("Error while handling new topic", e )
           }

@@ -451,7 +451,11 @@ public class Selector implements Selectable {
                 else
                     log.warn("Unexpected error from {}; closing connection", desc, e);
                 close(channel);
-                // 异常处理，放入断开的连接列表中
+
+
+                /**
+                 * 异常处理，放入断开的连接列表中
+                 */
                 this.disconnected.add(channel.id());
             }
         }

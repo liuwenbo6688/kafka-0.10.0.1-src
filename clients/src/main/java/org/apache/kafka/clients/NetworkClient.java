@@ -542,6 +542,10 @@ public class NetworkClient implements KafkaClient {
             log.debug("Node {} disconnected.", node);
             processDisconnection(responses, node, now);
         }
+
+        /**
+         * 一旦发下有链接是断开的，就会重新拉取元数据
+         */
         // we got a disconnect so we should probably refresh our metadata and see if that broker is dead
         if (this.selector.disconnected().size() > 0)
             metadataUpdater.requestUpdate();

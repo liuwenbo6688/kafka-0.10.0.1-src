@@ -40,6 +40,7 @@ import org.apache.zookeeper.{CreateMode, KeeperException, ZooDefs, ZooKeeper}
 import scala.collection._
 
 object ZkUtils {
+
   val ConsumersPath = "/consumers"
   val BrokerIdsPath = "/brokers/ids"
   val BrokerTopicsPath = "/brokers/topics"
@@ -612,6 +613,7 @@ class ZkUtils(val zkClient: ZkClient,
 
   def getReplicaAssignmentForTopics(topics: Seq[String]): mutable.Map[TopicAndPartition, Seq[Int]] = {
     val ret = new mutable.HashMap[TopicAndPartition, Seq[Int]]
+
     topics.foreach { topic =>
       val jsonPartitionMapOpt = readDataMaybeNull(getTopicPath(topic))._1
       jsonPartitionMapOpt match {
@@ -620,11 +622,13 @@ class ZkUtils(val zkClient: ZkClient,
             case Some(m) => m.asInstanceOf[Map[String, Any]].get("partitions") match {
               case Some(repl)  =>
                 val replicaMap = repl.asInstanceOf[Map[String, Seq[Int]]]
-                for((partition, replicas) <- replicaMap){
-                  // 解析出副本分配方案，类似下面这样
-                  // partition0 - [0,1]
-                  // partition1 - [1,2]
-                  // partition2 - [0,1]
+                for ((partition, replicas) <- replicaMap) {
+                  /**
+                    * 解析出副本分配方案，类似下面这样
+                    * partition0 - [0,1]
+                    * partition1 - [1,2]
+                    * partition2 - [0,1]
+                    */
                   ret.put(TopicAndPartition(topic, partition.toInt), replicas)
                   debug("Replicas assigned to topic [%s], partition [%s] are [%s]".format(topic, partition, replicas))
                 }
@@ -635,6 +639,8 @@ class ZkUtils(val zkClient: ZkClient,
         case None =>
       }
     }
+
+
     ret
   }
 

@@ -570,9 +570,9 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    * This callback is invoked by the reassigned partitions listener. When an admin command initiates a partition
    * reassignment, it creates the /admin/reassign_partitions path that triggers the zookeeper listener.
    * Reassigning replicas for a partition goes through a few steps listed in the code.
-   * RAR = Reassigned replicas
-   * OAR = Original list of replicas for partition
-   * AR = current assigned replicas
+   * RAR = Reassigned replicas    新的replica位置映射 (replica[Topic+Partition] <--> Broker)
+   * OAR = Original list of replicas for partition  原来的replica位置映射
+   * AR = current assigned replicas  目前的replica位置映射
    *
    * 1. Update AR in ZK with OAR + RAR.
    * 2. Send LeaderAndIsr request to every replica in OAR + RAR (with AR as OAR + RAR). We do this by forcing an update
@@ -606,6 +606,17 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    *
    * Note that we have to update AR in ZK with RAR last since it's the only place where we store OAR persistently.
    * This way, if the controller crashes before that step, we can still recover.
+    *
+    * <1> Kafka Controller首先会将存储在ZK中的AR信息更新为 RAR+OAR, 然后为每个partition更新leaderEpoch和ISR；
+    * <2> 接下来Controller会等待RAR中所有的replica都完成与各自leader的同步,并将RAR中所有的replica设为在线状态；
+    * <3> 两种条件下需要重新进行Replica Leader选举:
+    *       a. 如果RAR中不包含一个Partition的Replica Leader;
+    *       b. 或者RAR中包含这个Partition的Replica Leader, 但是Leader所在的Broker挂掉了。
+    * <4> 将OAR-RAR得到的差集中所有Replica(被迁移到其他Broker节点上的源replica)设为Offline，ZK中的ISR信息也会自动剔除Offline Replica；
+    * <5> 将第四步中处于（OAR-RAR)的Replica设为不存在状态(NonExistentReplica)，最终触发相关replica的物理删除；
+    * <6> ZK中的AR信息被更新为 RAR；
+    * <7> 从ZK中/admin/reassign_partitions路径删除这个Partition；
+    * <8> 告知Brokers更新Metadata ( leaderEpoch之类 )；
    */
   def onPartitionReassignment(topicAndPartition: TopicAndPartition, reassignedPartitionContext: ReassignedPartitionsContext) {
     val reassignedReplicas = reassignedPartitionContext.newReplicas
@@ -685,7 +696,9 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
               // mark topic ineligible for deletion for the partitions being reassigned
               deleteTopicManager.markTopicIneligibleForDeletion(Set(topic))
 
-              //
+              /**
+                *
+                */
               onPartitionReassignment(topicAndPartition, reassignedPartitionContext)
 
             } else {
@@ -1329,7 +1342,10 @@ class PartitionsReassignedListener(controller: KafkaController) extends IZkDataL
           controller.removePartitionFromReassignedPartitions(partitionToBeReassigned._1)
         } else {
           val context = new ReassignedPartitionsContext(partitionToBeReassigned._2)
-          //
+
+          /**
+            *
+            */
           controller.initiateReassignReplicasForTopicPartition(partitionToBeReassigned._1, context)
         }
       }

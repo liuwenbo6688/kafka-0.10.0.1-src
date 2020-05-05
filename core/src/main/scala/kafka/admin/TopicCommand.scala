@@ -57,16 +57,23 @@ object TopicCommand extends Logging {
                           JaasUtils.isZkSecurityEnabled())
     var exitCode = 0
     try {
+
       if(opts.options.has(opts.createOpt))
+        // 创建topic的流程
         createTopic(zkUtils, opts)
+
       else if(opts.options.has(opts.alterOpt))
         alterTopic(zkUtils, opts)
+
       else if(opts.options.has(opts.listOpt))
         listTopics(zkUtils, opts)
+
       else if(opts.options.has(opts.describeOpt))
         describeTopic(zkUtils, opts)
+
       else if(opts.options.has(opts.deleteOpt))
         deleteTopic(zkUtils, opts)
+
     } catch {
       case e: Throwable =>
         println("Error while executing topic command : " + e.getMessage)
@@ -101,6 +108,7 @@ object TopicCommand extends Logging {
         warnOnMaxMessagesChange(configs, assignment.valuesIterator.next().length)
         AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, assignment, configs, update = false)
       } else {
+        // 自动分配副本到broker
         CommandLineUtils.checkRequiredArgs(opts.parser, opts.options, opts.partitionsOpt, opts.replicationFactorOpt)
         val partitions = opts.options.valueOf(opts.partitionsOpt).intValue
         val replicas = opts.options.valueOf(opts.replicationFactorOpt).intValue

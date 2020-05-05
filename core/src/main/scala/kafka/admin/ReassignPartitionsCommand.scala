@@ -227,6 +227,8 @@ object ReassignPartitionsCommand extends Logging {
 
 class ReassignPartitionsCommand(zkUtils: ZkUtils, partitions: collection.Map[TopicAndPartition, collection.Seq[Int]])
   extends Logging {
+
+
   def reassignPartitions(): Boolean = {
     try {
       val validPartitions = partitions.filter(p => validatePartition(zkUtils, p._1.topic, p._1.partition))
@@ -248,6 +250,8 @@ class ReassignPartitionsCommand(zkUtils: ZkUtils, partitions: collection.Map[Top
       case e: Throwable => error("Admin command failed", e); false
     }
   }
+
+
 
   def validatePartition(zkUtils: ZkUtils, topic: String, partition: Int): Boolean = {
     // check if partition exists
