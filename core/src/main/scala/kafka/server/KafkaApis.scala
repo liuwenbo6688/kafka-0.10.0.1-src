@@ -78,27 +78,34 @@ class KafkaApis(val requestChannel: RequestChannel,
         // 生产
         case ApiKeys.PRODUCE => handleProducerRequest(request)
 
-        // fetch的逻辑  follower来拉取副本
-        // 1 先会尝试从本地磁盘文件读取指定offset之后的数据
-        // 2 如果能读取到，那么就直接返回给人家就可以了
-        // 3 是不是考虑更新一下 HW, ISR,这些东西是否需要维护
-        // 4 如果拉取不到任何数据，此时需要采用时间轮机制，延迟执行fetch
-        // 5 如果leader分区有新的数据写入，此时就可以唤醒时间轮中等待的fetch request来执行拉取数据
+
+        /**
+          * fetch的逻辑  follower来拉取副本
+          * 1、 先会尝试从本地磁盘文件读取指定offset之后的数据
+          * 2、 如果能读取到，那么就直接返回给人家就可以了
+          * 3、 是不是考虑更新一下 HW, ISR,这些东西是否需要维护
+          * 4、 如果拉取不到任何数据，此时需要采用时间轮机制，延迟执行fetch
+          * 5、 如果leader分区有新的数据写入，此时就可以唤醒时间轮中等待的fetch request来执行拉取数据
+          */
         case ApiKeys.FETCH => handleFetchRequest(request)
 
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
 
-        //
+        /**
+          * 获取所有topic的元数据
+          */
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
 
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
+
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
         case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request)
-        //
+
+        // 加入 consumer group
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
 
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
@@ -532,18 +539,17 @@ class KafkaApis(val requestChannel: RequestChannel,
       // call the replica manager to fetch messages from the local replica
       /**
         *
-        * 1 先会尝试从本地磁盘文件中读取指定offset之后的数据， ReplicaManager进行拉取
-        * 2 如果能够读取到，那么就直接返回给人家就可以了，通过一个回调函数发送回去
-        * 3 是不是要考虑一下 HW ISR 这些东西是否需要在这类维护
-        * 4 如果读不到任何的数据，此时需要采取时间轮机制，延迟执行fetch
-        * 5 如果这个leader有新的数据写入，此时可以唤醒时间轮中等待的 FetchRequest来执行数据拉取
+        * 1、 先会尝试从本地磁盘文件中读取指定offset之后的数据， ReplicaManager进行拉取
+        * 2、 如果能够读取到，那么就直接返回给人家就可以了，通过一个回调函数发送回去
+        * 3、 是不是要考虑一下 HW ISR 这些东西是否需要在这类维护
+        * 4、 如果读不到任何的数据，此时需要采取时间轮机制，延迟执行fetch
+        * 5、 如果这个leader有新的数据写入，此时可以唤醒时间轮中等待的 FetchRequest来执行数据拉取
         */
-      replicaManager.fetchMessages(
-        fetchRequest.maxWait.toLong,
-        fetchRequest.replicaId,
-        fetchRequest.minBytes,
-        authorizedRequestInfo,
-        sendResponseCallback)
+      replicaManager.fetchMessages(fetchRequest.maxWait.toLong,
+                                    fetchRequest.replicaId,
+                                    fetchRequest.minBytes,
+                                    authorizedRequestInfo, //  Map[TopicAndPartition, PartitionFetchInfo]
+                                    sendResponseCallback)
 
     }
   }
@@ -977,12 +983,14 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (!authorize(request.session, Read, new Resource(Group, syncGroupRequest.groupId()))) {
       sendResponseCallback(Array[Byte](), Errors.GROUP_AUTHORIZATION_FAILED.code)
     } else {
-      coordinator.handleSyncGroup(
-        syncGroupRequest.groupId(),
-        syncGroupRequest.generationId(),
-        syncGroupRequest.memberId(),
-        syncGroupRequest.groupAssignment().mapValues(Utils.toArray(_)),
-        sendResponseCallback
+      /**
+        *
+        */
+      coordinator.handleSyncGroup(syncGroupRequest.groupId(),
+                                  syncGroupRequest.generationId(),
+                                  syncGroupRequest.memberId(),
+                                  syncGroupRequest.groupAssignment().mapValues(Utils.toArray(_)),
+                                  sendResponseCallback
       )
     }
   }

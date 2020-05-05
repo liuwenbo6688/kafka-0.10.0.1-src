@@ -69,7 +69,12 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     private final SubscriptionState subscriptions;
     private final OffsetCommitCallback defaultOffsetCommitCallback;
     private final boolean autoCommitEnabled;
+
+    /**
+     *
+     */
     private final AutoCommitTask autoCommitTask;
+
     private final ConsumerInterceptors<?, ?> interceptors;
     private final boolean excludeInternalTopics;
 
@@ -114,7 +119,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         addMetadataListener();
 
-        if (autoCommitEnabled) {// 自动提交 offset
+        if (autoCommitEnabled) { // 自动提交 offset 的Task
             this.autoCommitTask = new AutoCommitTask(autoCommitIntervalMs);
             this.autoCommitTask.reschedule();
         } else {
@@ -363,6 +368,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             if (subscriptions.hasPatternSubscription())
                 client.ensureFreshMetadata();
 
+            //
             ensureActiveGroup();
         }
     }
@@ -381,7 +387,11 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
     public void commitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, OffsetCommitCallback callback) {
         this.subscriptions.needRefreshCommits();
+        /**
+         *
+         */
         RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
+
         final OffsetCommitCallback cb = callback == null ? defaultOffsetCommitCallback : callback;
         future.addListener(new RequestFutureListener<Void>() {
             @Override
@@ -526,6 +536,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         log.trace("Sending offset-commit request with {} to coordinator {} for group {}", offsets, coordinator, groupId);
 
+        //  OFFSET_COMMIT ,提交 offset
         return client.send(coordinator, ApiKeys.OFFSET_COMMIT, req)
                 .compose(new OffsetCommitResponseHandler(offsets));
     }

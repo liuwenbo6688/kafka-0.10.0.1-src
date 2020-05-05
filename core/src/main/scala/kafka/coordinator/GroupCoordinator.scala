@@ -696,6 +696,12 @@ class GroupCoordinator(val brokerId: Int,
     }
   }
 
+  /**
+    * 心跳过期了该怎么做？
+    * @param group
+    * @param member
+    * @param heartbeatDeadline
+    */
   def onExpireHeartbeat(group: GroupMetadata, member: MemberMetadata, heartbeatDeadline: Long) {
     group synchronized {
       if (!shouldKeepMemberAlive(member, heartbeatDeadline))

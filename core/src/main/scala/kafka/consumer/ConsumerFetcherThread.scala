@@ -26,6 +26,9 @@ import scala.collection.JavaConverters
 import JavaConverters._
 import ConsumerFetcherThread._
 
+/**
+  * 消费端拉取线程
+  */
 class ConsumerFetcherThread(name: String,
                             val config: ConsumerConfig,
                             sourceBroker: BrokerEndPoint,

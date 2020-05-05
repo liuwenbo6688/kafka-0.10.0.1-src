@@ -188,8 +188,11 @@ class LogSegment(val log: FileMessageSet,
         min(min(maxPosition, endPosition) - startPosition.position, maxSize).toInt
     }
 
-    // log.read 从某个物理位置读取
-    FetchDataInfo(offsetMetadata, log.read(startPosition.position, length))
+
+    FetchDataInfo(
+                offsetMetadata,
+                log.read(startPosition.position, length) // log.read 从某个物理位置读取
+    )
   }
 
   /**

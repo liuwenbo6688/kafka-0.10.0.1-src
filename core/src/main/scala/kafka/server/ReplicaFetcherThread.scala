@@ -131,7 +131,9 @@ class ReplicaFetcherThread(name: String,
       // 1、拿到数据就往磁盘写
       // 这个地方，不管是leader还是follower写磁盘文件的方法是一样的
       // 也就是两边更新LEO的方式也是一样的
-      replica.log.get.append(messageSet, assignOffsets = false)
+      replica.log.get.append(messageSet,
+        assignOffsets = false //因为是拉取leader的数据，不需要分配offset，offset是leader那边已经指定好的
+      )
 
 
       if (logger.isTraceEnabled)
@@ -299,12 +301,15 @@ class ReplicaFetcherThread(name: String,
         // PartitionData  :
         // 从哪个offset开始拉取
         // 拉取的fetch size（默认1M）
-        requestMap(new TopicPartition(topic, partition)) = new JFetchRequest.PartitionData(partitionFetchState.offset, fetchSize)
+        requestMap(new TopicPartition(topic, partition))
+          = new JFetchRequest.PartitionData(partitionFetchState.offset, fetchSize)
     }
 
     // 一次fetch的请求过去，至少要拉取 minBytes（默认1个字节） 的数据
     // 如果连一个字节的数据都没有，此时就需要等待一段时间，最多可以等待多长时间 maxWait（时间轮）
-    new FetchRequest(new JFetchRequest(replicaId, maxWait, minBytes, requestMap.asJava))
+    new FetchRequest(
+        new JFetchRequest(replicaId, maxWait, minBytes, requestMap.asJava)
+    )
   }
 
 }

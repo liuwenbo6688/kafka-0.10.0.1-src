@@ -37,6 +37,7 @@ import com.yammer.metrics.core.Gauge
 
 /**
  *  Abstract class for fetching data from multiple partitions from the same broker.
+  *
  */
 abstract class AbstractFetcherThread(name: String,
                                      clientId: String,
@@ -48,7 +49,12 @@ abstract class AbstractFetcherThread(name: String,
   type REQ <: FetchRequest
   type PD <: PartitionData
 
+  /**
+    *
+    */
   private val partitionMap = new mutable.HashMap[TopicAndPartition, PartitionFetchState] // a (topic, partition) -> partitionFetchState map
+
+
   private val partitionMapLock = new ReentrantLock
   private val partitionMapCond = partitionMapLock.newCondition()
 
@@ -83,13 +89,18 @@ abstract class AbstractFetcherThread(name: String,
     fetcherLagStats.unregister()
   }
 
+  /**
+    * doWork() 就是线程的执行流程
+    */
   override def doWork() {
 
     //1 构建 FetchRequest
     val fetchRequest = inLock(partitionMapLock) {
 
-      // 针对leader都在某个Broker上的一批follower分区,构建一个 fetchRequest 对象
-      // 恢复送给一个Broker，说我们这儿有一批follower分区要拉取数据
+      /**
+        * 针对leader都在某个Broker上的一批follower分区,构建一个 fetchRequest 对象
+        * 会发送给一个Broker，说我们这儿有一批follower分区要拉取数据
+        */
       val fetchRequest = buildFetchRequest(partitionMap)
 
       if (fetchRequest.isEmpty) {
@@ -110,8 +121,13 @@ abstract class AbstractFetcherThread(name: String,
 
     try {
       trace("Issuing to broker %d of fetch request %s".format(sourceBroker.id, fetchRequest))
-      // fetch 请求是怎么发出去的
+
+      /**
+        *  fetch 请求是怎么发出去的
+        *  拿到 leader partition broker 返回的数据
+        */
       responseData = fetch(fetchRequest)
+
     } catch {
       case t: Throwable =>
         if (isRunning.get) {
@@ -123,6 +139,7 @@ abstract class AbstractFetcherThread(name: String,
           }
         }
     }
+
     fetcherStats.requestRate.mark()
 
     /**

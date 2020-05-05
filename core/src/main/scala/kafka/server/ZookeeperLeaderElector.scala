@@ -32,9 +32,9 @@ import org.apache.kafka.common.security.JaasUtils
  * callback
  */
 class ZookeeperLeaderElector(controllerContext: ControllerContext,
-                             electionPath: String,
+                             electionPath: String, // "/controller"
                              onBecomingLeader: () => Unit,
-                             onResigningAsLeader: () => Unit,
+                             onResigningAsLeader: () => Unit, // Resigning 辞职，辞去
                              brokerId: Int)
   extends LeaderElector with Logging {
   var leaderId = -1
@@ -42,6 +42,9 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
   val index = electionPath.lastIndexOf("/")
   if (index > 0)
     controllerContext.zkUtils.makeSurePersistentPathExists(electionPath.substring(0, index))
+
+  // leader controller 状态变化的监听器
+  // 当"/controller"节点删除， LeaderChangeListener的handleDataDeleted() 方法进行重新选举
   val leaderChangeListener = new LeaderChangeListener
 
   def startup {
@@ -65,8 +68,15 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
 
   def elect: Boolean = {
     val timestamp = SystemTime.milliseconds.toString
+
+    /**
+      * {"version" : 1,
+      * "brokerid" : xxx,
+      * "timestamp" : xxxx}
+      */
     val electString = Json.encode(Map("version" -> 1, "brokerid" -> brokerId, "timestamp" -> timestamp))
-   
+
+    // 解析 /controller 上的信息，拿到leader brokerid
    leaderId = getControllerID 
     /* 
      * We can get here during the initial startup and the handleDeleted ZK callback. Because of the potential race condition, 
@@ -75,13 +85,14 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
      */
     if(leaderId != -1) {
        debug("Broker %d has been elected as leader, so stopping the election process.".format(leaderId))
-       //
+       // 如果 leader brokerid 不等于-1，说明已经有人选举为leader controller了
        return amILeader
     }
 
     // 尝试创建 "/controller" zonde
 
     try {
+      // 尝试去创建一个 /controller的 ephemeral znode
       val zkCheckedEphemeral = new ZKCheckedEphemeral(electionPath,
                                                       electString,
                                                       controllerContext.zkUtils.zkConnection.getZookeeper,
@@ -91,7 +102,12 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
       zkCheckedEphemeral.create()
       info(brokerId + " successfully elected as leader")
       leaderId = brokerId
+
+      /**
+        * 非常重要的方法，调用onBecomingLeader方法，做一些自己成为active controller该做的事情
+        */
       onBecomingLeader()
+
     } catch {
       case e: ZkNodeExistsException =>
         // 说明被别人创建成功了"/Controller" 节点，就去解析znode的内容，拿到leader的brokerId

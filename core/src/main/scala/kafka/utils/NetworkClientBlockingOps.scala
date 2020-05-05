@@ -75,6 +75,10 @@ class NetworkClientBlockingOps(val client: NetworkClient) extends AnyVal {
    * care.
    */
   def blockingSendAndReceive(request: ClientRequest)(implicit time: JTime): ClientResponse = {
+
+    /**
+      * 走网络通信发送的流程，将fetch请求发送的 leader partition 的 broker
+      */
     client.send(request, time.milliseconds())
 
     // 先看 pollContinuously
@@ -134,8 +138,11 @@ class NetworkClientBlockingOps(val client: NetworkClient) extends AnyVal {
 
     @tailrec
     def recursivePoll: T = {
+
+      // 在这里阻塞，
       // rely on request timeout to ensure we don't block forever
       val responses = client.poll(Long.MaxValue, time.milliseconds()).asScala
+
       collect(responses) match {
         case Some(result) => result
         case None => recursivePoll

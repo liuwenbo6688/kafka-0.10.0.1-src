@@ -353,6 +353,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    */
   class BrokerChangeListener() extends IZkChildListener with Logging {
     this.logIdent = "[BrokerChangeListener on Controller " + controller.config.brokerId + "]: "
+
     def handleChildChange(parentPath : String, currentBrokerList : java.util.List[String]) {
       info("Broker change listener fired for path %s with children %s".format(parentPath, currentBrokerList.sorted.mkString(",")))
       inLock(controllerContext.controllerLock) {
@@ -362,8 +363,10 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               val curBrokers = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
               val curBrokerIds = curBrokers.map(_.id)
               val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds
-              val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
-              val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
+
+              val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds //新注册上来的broker
+              val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds //之前活着，现在已经死掉的broker
+
               val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))
               controllerContext.liveBrokers = curBrokers
               val newBrokerIdsSorted = newBrokerIds.toSeq.sorted
@@ -378,7 +381,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               // 死掉的节点处理，移除
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
 
-              //
+              //感知到有新的broker变动，立马把信息推送给其他的broker
               if(newBrokerIds.size > 0)
                 controller.onBrokerStartup(newBrokerIdsSorted)
 
@@ -393,6 +396,8 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
         }
       }
     }
+
+
   }
 }
 

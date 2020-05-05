@@ -97,7 +97,13 @@ class Log(val dir: File,
   }
 
   /* the actual segments of the log */
-  private val segments: ConcurrentNavigableMap[java.lang.Long, LogSegment] = new ConcurrentSkipListMap[java.lang.Long, LogSegment]
+  /**
+    * ConcurrentNavigableMap  带导航的map，学习下kafka的用法，真的很巧妙
+    * key：起始的offset ， value： 日志段
+    */
+  private val segments: ConcurrentNavigableMap[java.lang.Long, LogSegment] =
+                                      new ConcurrentSkipListMap[java.lang.Long, LogSegment]
+
   loadSegments()
 
   // 这个数据结构就代表了 LEO
@@ -311,7 +317,11 @@ class Log(val dir: File,
    * however if the assignOffsets=false flag is passed we will only check that the existing offsets are valid.
    *
    * @param messages The message set to append
-   * @param assignOffsets Should the log assign offsets to this message set or blindly apply what it is given
+   *
+    * @param assignOffsets Should the log assign offsets to this message set or blindly apply what it is given
+    *              这个参数很重要，
+    *              follower拉取leader的数据，不需要分配offset，offset是leader那边已经指定好的 ， assignOffsets = false
+    *              如果是客户端写入leader partition， 需要分配offset，assignOffsets = true
    *
    * @throws KafkaStorageException If the append fails due to an I/O error.
    *

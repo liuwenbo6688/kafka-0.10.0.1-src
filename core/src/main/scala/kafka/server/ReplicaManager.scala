@@ -124,8 +124,12 @@ class ReplicaManager(val config: KafkaConfig,
 
   private val replicaStateChangeLock = new Object
 
-  // 拉取副本的核心组件
-  val replicaFetcherManager = new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix)
+
+  /**
+    *  拉取副本的核心组件
+    */
+  val replicaFetcherManager =
+                new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix)
 
   // 高水位
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
@@ -537,17 +541,21 @@ class ReplicaManager(val config: KafkaConfig,
     val fetchOnlyFromLeader: Boolean = replicaId != Request.DebuggingConsumerId
     val fetchOnlyCommitted: Boolean = ! Request.isValidBrokerId(replicaId)
 
-    // read from local logs
-    // 从本地磁盘读取数据出来，指定了每个分区从哪个offset开始读取
-    // 稀疏索引的使用，那个offset的分区段文件的哪个物理位置，就从那个物理位置开始读取（position）
-    // logReadResults: Map[TopicAndPartition, LogReadResult]
+
+    /**
+      * read from local logs
+      * 从本地磁盘读取数据出来，指定了每个分区从哪个offset开始读取
+      * 稀疏索引的使用，那个offset的分区段文件的哪个物理位置，就从那个物理位置开始读取（position）
+      * logReadResults: Map[TopicAndPartition, LogReadResult]
+      */
     val logReadResults = readFromLocalLog(fetchOnlyFromLeader, fetchOnlyCommitted, fetchInfo)
 
     // if the fetch comes from the follower,
     // update its corresponding log end offset
-    // *** 更新leader中维护的follower的 LEO
+    /**
+      * 更新leader中维护的follower的 LEO 和 HW
+      */
     if(Request.isValidBrokerId(replicaId))
-      //
       updateFollowerLogReadResults(replicaId, logReadResults)
 
     // check if this fetch request can be satisfied right away
@@ -831,8 +839,10 @@ class ReplicaManager(val config: KafkaConfig,
    *
    * 这个方法什么时候会调用？
    * 如果说一个broker感知到自己被分配了一些follower分区之后
-   * 可能就会来调用这个方法
+   * 可能就会来调用这个方法,在这里为一批follower分区创建一个fetcher线程
+   * 接下来fetcher线程就会负责去拉取数据到本地副本
    *
+   * 分6个步骤
    * 1. Remove these partitions from the leader partitions set.
    * 2. Mark the replicas as followers so that no more data can be added from the producer clients.
    * 3. Stop fetchers for these partitions so that no more data can be added by the replica fetcher threads.
@@ -929,7 +939,9 @@ class ReplicaManager(val config: KafkaConfig,
             metadataCache.getAliveBrokers.find(_.id == partition.leaderReplicaIdOpt.get).get.getBrokerEndPoint(config.interBrokerSecurityProtocol),
             partition.getReplica().get.logEndOffset.messageOffset)).toMap
 
-        //....
+        /**
+          *
+          */
         replicaFetcherManager.addFetcherForPartitions(partitionsToMakeFollowerWithLeaderAndOffset)
 
         partitionsToMakeFollower.foreach { partition =>
@@ -959,7 +971,10 @@ class ReplicaManager(val config: KafkaConfig,
   private def maybeShrinkIsr(): Unit = {
     trace("Evaluating ISR list of partitions to see which replicas can be removed from the ISR")
     // 是否有的副本同步太慢，就把他从isr中把他踢掉
-    allPartitions.values.foreach(partition => partition.maybeShrinkIsr(config.replicaLagTimeMaxMs))
+    // Shrink是收缩的意思
+    allPartitions.values.foreach( partition =>
+            partition.maybeShrinkIsr(config.replicaLagTimeMaxMs)
+    )
   }
 
   private def updateFollowerLogReadResults(replicaId: Int, readResults: Map[TopicAndPartition, LogReadResult]) {

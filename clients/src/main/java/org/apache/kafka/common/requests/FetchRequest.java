@@ -50,12 +50,12 @@ public class FetchRequest extends AbstractRequest {
     private final Map<TopicPartition, PartitionData> fetchData;
 
     public static final class PartitionData {
-        public final long offset;
-        public final int maxBytes;
+        public final long offset;  // 从哪个offset开始拉取
+        public final int maxBytes; // 拉取数据最大大小
 
         public PartitionData(long offset, int maxBytes) {
-            this.offset = offset; // 从哪个offset开始拉取
-            this.maxBytes = maxBytes; // 拉取数据最大大小
+            this.offset = offset;
+            this.maxBytes = maxBytes;
         }
     }
 
@@ -69,13 +69,22 @@ public class FetchRequest extends AbstractRequest {
     /**
      * Create a replica fetch request
      */
-    public FetchRequest(int replicaId, int maxWait, int minBytes, Map<TopicPartition, PartitionData> fetchData) {
+    public FetchRequest(int replicaId,
+                        int maxWait,  // leader没有数据写入的情况下，follower最多等待时间
+                        int minBytes, // 最小拉取的字节数
+                        Map<TopicPartition, PartitionData> fetchData // 要拉取的所有分区的信息
+    ) {
         super(new Struct(CURRENT_SCHEMA));
         Map<String, Map<Integer, PartitionData>> topicsData = CollectionUtils.groupDataByTopic(fetchData);
 
         struct.set(REPLICA_ID_KEY_NAME, replicaId);
         struct.set(MAX_WAIT_KEY_NAME, maxWait);
         struct.set(MIN_BYTES_KEY_NAME, minBytes);
+
+
+        /**
+         *  topicArray
+         */
         List<Struct> topicArray = new ArrayList<Struct>();
         for (Map.Entry<String, Map<Integer, PartitionData>> topicEntry : topicsData.entrySet()) {
             Struct topicData = struct.instance(TOPICS_KEY_NAME);
@@ -93,6 +102,8 @@ public class FetchRequest extends AbstractRequest {
             topicArray.add(topicData);
         }
         struct.set(TOPICS_KEY_NAME, topicArray.toArray());
+
+
         this.replicaId = replicaId;
         this.maxWait = maxWait;
         this.minBytes = minBytes;

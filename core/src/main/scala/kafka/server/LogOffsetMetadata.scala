@@ -33,10 +33,10 @@ object LogOffsetMetadata {
 }
 
 /*
- * A log offset structure, including:
- *  1. the message offset
- *  2. the base message offset of the located segment
- *  3. the physical position on the located segment
+ * A log offset structure, including: 定义了日志位移的元数据信息
+ *  1. the message offset  消息位移
+ *  2. the base message offset of the located segment   位移所在日志段的基础位移(起始位移)
+ *  3. the physical position on the located segment     所在段的物理位置
  */
 case class LogOffsetMetadata(messageOffset: Long,
                              segmentBaseOffset: Long = LogOffsetMetadata.UnknownSegBaseOffset,

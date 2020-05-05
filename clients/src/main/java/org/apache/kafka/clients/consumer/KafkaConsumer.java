@@ -615,6 +615,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     MetricsReporter.class);
             reporters.add(new JmxReporter(JMX_PREFIX));
             this.metrics = new Metrics(metricConfig, reporters, time);
+            // retry.backoff.ms
             this.retryBackoffMs = config.getLong(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG);
             this.metadata = new Metadata(retryBackoffMs, config.getLong(ConsumerConfig.METADATA_MAX_AGE_CONFIG));
             List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(config.getList(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
@@ -646,24 +647,24 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
 
             /**
-             *
+             * Consumer 的 Coordinator
              */
             this.coordinator = new ConsumerCoordinator(this.client,
-                    config.getString(ConsumerConfig.GROUP_ID_CONFIG),
-                    config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
-                    config.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG),
-                    assignors,
-                    this.metadata,
-                    this.subscriptions,
-                    metrics,
-                    metricGrpPrefix,
-                    this.time,
-                    retryBackoffMs,
-                    new ConsumerCoordinator.DefaultOffsetCommitCallback(),
-                    config.getBoolean(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG),
-                    config.getLong(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG),
-                    this.interceptors,
-                    config.getBoolean(ConsumerConfig.EXCLUDE_INTERNAL_TOPICS_CONFIG));
+                                        config.getString(ConsumerConfig.GROUP_ID_CONFIG),
+                                        config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
+                                        config.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG),
+                                        assignors,
+                                        this.metadata,
+                                        this.subscriptions,
+                                        metrics,
+                                        metricGrpPrefix,
+                                        this.time,
+                                        retryBackoffMs,
+                                        new ConsumerCoordinator.DefaultOffsetCommitCallback(),
+                                        config.getBoolean(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG),
+                                        config.getLong(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG),
+                                        this.interceptors,
+                                        config.getBoolean(ConsumerConfig.EXCLUDE_INTERNAL_TOPICS_CONFIG));
 
 
             if (keyDeserializer == null) {
@@ -684,6 +685,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             }
 
 
+            // consumer端拉取数据的组件
             this.fetcher = new Fetcher<>(this.client,
                     config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG),
                     config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG),
@@ -944,7 +946,12 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             long start = time.milliseconds();
             long remaining = timeout;
             do {
+
+                /**
+                 *
+                 */
                 Map<TopicPartition, List<ConsumerRecord<K, V>>> records = pollOnce(remaining);
+
                 if (!records.isEmpty()) {
                     // before returning the fetched records, we can send off the next round of fetches
                     // and avoid block waiting for their responses to enable pipelining while the user
@@ -984,6 +991,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
         // ensure we have partitions assigned if we expect to
         if (subscriptions.partitionsAutoAssigned())
+            //
             coordinator.ensurePartitionAssignment();
 
         // fetch positions if we have partitions we're subscribed to that we

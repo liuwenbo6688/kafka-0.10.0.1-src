@@ -48,6 +48,7 @@ class KafkaHealthcheck(brokerId: Int,
 
   // /brokers/ids/0    /brokers/ids/1  ......
   private val brokerIdPath = ZkUtils.BrokerIdsPath + "/" + brokerId
+
   private[server] val sessionExpireListener = new SessionExpireListener
 
   def startup() {
@@ -74,8 +75,14 @@ class KafkaHealthcheck(brokerId: Int,
     val plaintextEndpoint = updatedEndpoints.getOrElse(SecurityProtocol.PLAINTEXT, new EndPoint(null,-1,null))
 
     // 把自己注册到zk上去，controller就能感知到了
-    zkUtils.registerBrokerInZk(brokerId, plaintextEndpoint.host, plaintextEndpoint.port, updatedEndpoints, jmxPort, rack,
-      interBrokerProtocolVersion)
+    // 注册地址： /brokers/ids/{broker.id}
+    zkUtils.registerBrokerInZk(brokerId,
+                                plaintextEndpoint.host,
+                                plaintextEndpoint.port,
+                                updatedEndpoints,
+                                jmxPort,
+                                rack,
+                                interBrokerProtocolVersion)
   }
 
   /**

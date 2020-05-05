@@ -14,6 +14,7 @@ package org.apache.kafka.clients.consumer.internals;
 
 /**
  * A helper class for managing the heartbeat to the coordinator
+ * 向 coordinator 发送心跳的工具类
  */
 public final class Heartbeat {
     private final long timeout;

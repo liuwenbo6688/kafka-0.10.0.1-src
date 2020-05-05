@@ -260,7 +260,11 @@ class Partition(val topic: String,
 
         // check if we need to expand ISR to include this replica
         // if it is not in the ISR yet
-        // 2、每次更新了replica的LEO之后，都要判断是否要扩张 isr 列表
+        /**
+          * 2、每次更新了replica的LEO之后，都要判断是否要扩张 isr 列表
+          * 把不在isr列表中的副本分区，重新加回到isr列表
+          * 在这个方法里可能更新leader 的 HW
+          */
         maybeExpandIsr(replicaId)
 
         debug("Recorded replica %d log end offset (LEO) position %d for partition %s."
@@ -293,10 +297,13 @@ class Partition(val topic: String,
           val replica = getReplica(replicaId).get
           val leaderHW = leaderReplica.highWatermark
 
-          // 判断是否加入isr的条件
-          // 1、 首先follower partition不在 ISR 列表中
-          // 2、 follower brokerid 在 已分配的列表中
-          // 3、 （关键条件）follower的LEO >= leader 的 HW
+
+          /**
+            * 判断是否重新加入isr的条件
+            * 1、 首先follower partition不在 ISR 列表中
+            * 2、 follower brokerid 在 已分配的列表中
+            * 3、 （关键条件）follower的LEO >= leader 的 HW
+            */
           if(!inSyncReplicas.contains(replica) &&
              assignedReplicas.map(_.brokerId).contains(replicaId) &&
                   replica.logEndOffset.offsetDiff(leaderHW) >= 0) {
@@ -312,7 +319,10 @@ class Partition(val topic: String,
           }
 
 
-          // 判断是否可以更新 HW，可以更新就
+
+          /**
+            * 判断是否可以更新 HW，可以更新就
+            */
           // check if the HW of the partition can now be incremented
           // since the replica maybe now be in the ISR and its LEO has just incremented
           maybeIncrementLeaderHW(leaderReplica)
@@ -394,9 +404,11 @@ class Partition(val topic: String,
     // 老的HW
     val oldHighWatermark = leaderReplica.highWatermark
 
-    // 如果新的hw 大于 老的hw
-    // 或者 在老的segment里面，就可以更新hw了
+
     if (oldHighWatermark.messageOffset < newHighWatermark.messageOffset || oldHighWatermark.onOlderSegment(newHighWatermark)) {
+      /**
+        *  如果当前isr中最小的LEO大于旧的的HW 或者 在老的segment里面，就可以更新hw了
+        */
       leaderReplica.highWatermark = newHighWatermark
       debug("High watermark for partition [%s,%d] updated to %s".format(topic, partitionId, newHighWatermark))
       true
@@ -474,9 +486,9 @@ class Partition(val topic: String,
      *
      **/
 
-      //从源码里看，只判断了第一种情况，并没有看到第二种情况？？？？？
+    // 从源码里看，只判断了第一种情况，并没有看到第二种情况？？？？？
     val leaderLogEndOffset = leaderReplica.logEndOffset
-    val candidateReplicas = inSyncReplicas - leaderReplica
+    val candidateReplicas = inSyncReplicas - leaderReplica // 扣减掉leader，就是所有的follower
 
     val laggingReplicas = candidateReplicas.filter(r => (time.milliseconds - r.lastCaughtUpTimeMs) > maxLagMs)
     if(laggingReplicas.size > 0)

@@ -125,6 +125,10 @@ object ZkUtils {
 class ZkUtils(val zkClient: ZkClient,
               val zkConnection: ZkConnection,
               val isSecure: Boolean) extends Logging {
+
+  /**
+    *
+    */
   // These are persistent ZK paths that should exist on kafka broker startup.
   val persistentZkPaths = Seq(ConsumersPath,
                               BrokerIdsPath,
@@ -278,16 +282,21 @@ class ZkUtils(val zkClient: ZkClient,
     val timestamp = SystemTime.milliseconds.toString
 
     val version = if (apiVersion >= KAFKA_0_10_0_IV1) 3 else 2
+    // broker数据结构
     var jsonMap = Map("version" -> version,
                       "host" -> host,
                       "port" -> port,
                       "endpoints" -> advertisedEndpoints.values.map(_.connectionString).toArray,
                       "jmx_port" -> jmxPort,
-                      "timestamp" -> timestamp
-    )
+                      "timestamp" -> timestamp)
+
     rack.foreach(rack => if (version >= 3) jsonMap += ("rack" -> rack))
 
     val brokerInfo = Json.encode(jsonMap)
+
+    /**
+      *
+      */
     registerBrokerInZk(brokerIdPath, brokerInfo)
 
     info("Registered broker %d at path %s with addresses: %s".format(id, brokerIdPath, advertisedEndpoints.mkString(",")))

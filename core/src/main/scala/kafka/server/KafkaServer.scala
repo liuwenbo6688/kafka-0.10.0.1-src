@@ -87,6 +87,14 @@ object KafkaServer {
 /**
  * Represents the lifecycle of a single Kafka broker. Handles all functionality required
  * to start up and shutdown a single Kafka node.
+  *
+  * （1）Kafka Broker的启动流程
+  * （2）Kafka Broker集群会选举出来一个Controller，是基于zk来实现的
+  * （3）Controller如何感知Broker集群，维护一个集群元数据，以及下发集群元数据给所有的Broker机器
+  * （4）创建Topic，如何负责划分分区，每个分区的leader和follower角色分布在哪些Broker上，核心数据
+  * （5）Producer写消息 -> Broker接收消息 -> 副本同步，全部搞定了
+  * （6）如果说某个Broker突然加入进来，Controller如何感知，以及如何实现数据的重平衡，如何进行元数据的变更和下发
+  * （7）如果说某个Broker突然宕机，Controller如何感知，如何重新选举leader，如何进行元数据的变更和下发
  */
 class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePrefix: Option[String] = None) extends Logging with KafkaMetricsGroup {
   private val startupComplete = new AtomicBoolean(false)
@@ -146,8 +154,15 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
     */
   var groupCoordinator: GroupCoordinator = null
 
+  /**
+    * 每个Broker都会有一个 KafkaController
+    * 但是同一时间其实只有一个Broker真正成为Controller，其他Broker会监视着，一旦那个broker挂了，其他人会重新尝试变为 Controller
+    */
   var kafkaController: KafkaController = null
 
+  /**
+    * 负责线程调度（基于线程池）的组件
+    */
   val kafkaScheduler = new KafkaScheduler(config.backgroundThreads)
 
   var kafkaHealthcheck: KafkaHealthcheck = null
@@ -221,14 +236,28 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         // 将副本写入本地磁盘
         // 从其他的 Broker 去拉取数据进行同步
         /* start replica manager */
-        replicaManager = new ReplicaManager(config, metrics, time, kafkaMetricsTime, zkUtils, kafkaScheduler, logManager,
-          isShuttingDown)
+        replicaManager = new ReplicaManager(config,
+                                            metrics,
+                                            time,
+                                            kafkaMetricsTime,
+                                            zkUtils,
+                                            kafkaScheduler,
+                                            logManager,
+                                            isShuttingDown)
         replicaManager.startup()
 
-        // 每个Broker都会有一个 KafkaController
-        // 但是同一时间其实只有一个Broker真正成为Controller，其他Broker会监视着，一旦那个broker挂了，其他人会重新尝试变为Controller
-        /* start kafka controller */
-        kafkaController = new KafkaController(config, zkUtils, brokerState, kafkaMetricsTime, metrics, threadNamePrefix)
+
+        /* start kafka controller
+         * 每个Broker都会有一个 KafkaController
+         * 但是同一时间其实只有一个Broker真正成为Controller，其他Broker会监视着，一旦那个broker挂了，其他人会重新尝试变为Controller
+        * */
+        kafkaController = new KafkaController(config,
+                                              zkUtils,
+                                              brokerState,
+                                              kafkaMetricsTime,
+                                              metrics,
+                                              threadNamePrefix)
+        // startup方法会选举出来一个active controller
         kafkaController.startup()
 
 
@@ -252,21 +281,20 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           */
         /* start processing requests */
         apis = new KafkaApis(socketServer.requestChannel,
-          replicaManager,  // replicaManager
-          groupCoordinator,
-          kafkaController,
-          zkUtils,
-          config.brokerId,
-          config,
-          metadataCache,
-          metrics,
-          authorizer)
+                                    replicaManager,  // replicaManager
+                                    groupCoordinator,
+                                    kafkaController,
+                                    zkUtils,
+                                    config.brokerId,
+                                    config,
+                                    metadataCache,
+                                    metrics,
+                                    authorizer)
 
-        requestHandlerPool = new KafkaRequestHandlerPool(
-          config.brokerId,
-          socketServer.requestChannel,
-          apis,
-          config.numIoThreads)
+        requestHandlerPool = new KafkaRequestHandlerPool(config.brokerId,
+                                                          socketServer.requestChannel,
+                                                          apis,
+                                                          config.numIoThreads)
 
 
         brokerState.newState(RunningAsBroker)
@@ -294,6 +322,10 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           else
             (protocol, endpoint)
         }
+
+        /**
+          * 把自己的信息注册到broker上去( /brokers/id/{broker.id} )
+          */
         kafkaHealthcheck = new KafkaHealthcheck(config.brokerId, listeners, zkUtils, config.rack,
           config.interBrokerProtocolVersion)
         kafkaHealthcheck.startup()
@@ -324,6 +356,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
     info("Connecting to zookeeper on " + config.zkConnect)
 
     val chroot = {
+      // zookeeper.connect
       if (config.zkConnect.indexOf("/") > 0)
         config.zkConnect.substring(config.zkConnect.indexOf("/"))
       else
@@ -338,8 +371,8 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
     if (chroot.length > 1) {
       val zkConnForChrootCreation = config.zkConnect.substring(0, config.zkConnect.indexOf("/"))
       val zkClientForChrootCreation = ZkUtils(zkConnForChrootCreation,
-                                              config.zkSessionTimeoutMs,
-                                              config.zkConnectionTimeoutMs,
+                                              config.zkSessionTimeoutMs,// zookeeper.session.timeout.ms
+                                              config.zkConnectionTimeoutMs,// zookeeper.connection.timeout.ms
                                               secureAclsEnabled)
       zkClientForChrootCreation.makeSurePersistentPathExists(chroot)
       info("Created zookeeper path " + chroot)

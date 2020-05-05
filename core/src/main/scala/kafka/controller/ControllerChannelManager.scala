@@ -38,7 +38,12 @@ import scala.collection.{Set, mutable}
 import scala.collection.mutable.HashMap
 
 class ControllerChannelManager(controllerContext: ControllerContext, config: KafkaConfig, time: Time, metrics: Metrics, threadNamePrefix: Option[String] = None) extends Logging {
+
+  /**
+    * 保存当前存活的 broker信息
+    */
   protected val brokerStateInfo = new HashMap[Int, ControllerBrokerStateInfo]
+
   private val brokerLock = new Object
   this.logIdent = "[Channel manager on controller " + config.brokerId + "]: "
 
@@ -136,6 +141,10 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
       brokerState.networkClient.close()
       brokerState.messageQueue.clear()
       brokerState.requestSendThread.shutdown()
+
+      /**
+        * 从当前存活的broker列表中移除
+        */
       brokerStateInfo.remove(brokerState.brokerNode.id)
     } catch {
       case e: Throwable => error("Error while removing broker by the controller", e)
@@ -373,6 +382,9 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
         controller.sendRequest(broker, ApiKeys.LEADER_AND_ISR, None, leaderAndIsrRequest, null)
       }
       leaderAndIsrRequestMap.clear()
+
+
+
       updateMetadataRequestMap.foreach { case (broker, partitionStateInfos) =>
 
         partitionStateInfos.foreach(p => stateChangeLogger.trace(("Controller %d epoch %d sending UpdateMetadata request %s " +
@@ -406,9 +418,11 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
             new UpdateMetadataRequest(version, controllerId, controllerEpoch, partitionStates.asJava, liveBrokers.asJava)
           }
 
-        // UPDATE_METADATA_KEY
+        // ApiKeys: UPDATE_METADATA_KEY : ("UpdateMetadata")
         controller.sendRequest(broker, ApiKeys.UPDATE_METADATA_KEY, Some(version), updateMetadataRequest, null)
       }
+
+
       updateMetadataRequestMap.clear()
       stopReplicaRequestMap.foreach { case (broker, replicaInfoList) =>
         val stopReplicaWithDelete = replicaInfoList.filter(_.deletePartition).map(_.replica).toSet

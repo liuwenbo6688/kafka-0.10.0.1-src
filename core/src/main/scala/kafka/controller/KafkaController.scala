@@ -164,15 +164,16 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   val partitionStateMachine = new PartitionStateMachine(this)
   val replicaStateMachine = new ReplicaStateMachine(this)
 
-  //  "/controller"
+
   private val controllerElector = new ZookeeperLeaderElector(controllerContext,
-    ZkUtils.ControllerPath,
-    onControllerFailover, // onControllerFailover会在当前节点被选举为leader之后调用， onBecomingLeader
-    onControllerResignation,
-    config.brokerId)
+                                                      ZkUtils.ControllerPath, // zk的 "/controller" 节点
+                                                      onControllerFailover, //onBecomingLeader: onControllerFailover会在当前节点被选举为leader之后调用，
+                                                      onControllerResignation,// onResigningAsLeader,  丢掉leader的情况下，触发的方法
+                                                      config.brokerId)
 
   // have a separate scheduler for the controller to be able to start and stop independently of the
   // kafka server
+  // 自动重平衡的组件
   private val autoRebalanceScheduler = new KafkaScheduler(1)
 
   var deleteTopicManager: TopicDeletionManager = null
@@ -324,6 +325,21 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    * 6. Starts the partition state machine
    * If it encounters any unexpected exception/error while becoming controller, it resigns as the current controller.
    * This ensures another controller election will be triggered and there will always be an actively serving controller
+    *
+    * 变为leader时被回调
+    * 当新的 controller 当选时，会触发 KafkaController.onControllerFailover 方法，在该方法中完成如下操作：
+    * 1. 读取并增加 Controller Epoch。
+    * 2. 在 reassignedPartitions Patch(/admin/reassign_partitions) 上注册 watcher。
+    * 3. 在 preferredReplicaElection Path(/admin/preferred_replica_election) 上注册 watcher。
+    * 4. 通过 partitionStateMachine 在 broker Topics Patch(/brokers/topics) 上注册 watcher。
+    * 5. 若 delete.topic.enable=true（默认值是 false），则 partitionStateMachine 在 Delete Topic Patch(/admin/delete_topics) 上注册 watcher。
+    * 6. 通过 replicaStateMachine在 Broker Ids Patch(/brokers/ids)上注册Watch。
+    * 7. 初始化 ControllerContext 对象，设置当前所有 topic，“活”着的 broker 列表，所有 partition 的 leader 及 ISR等。
+    * 8. 启动 replicaStateMachine 和 partitionStateMachine。
+    * 9. 将 brokerState 状态设置为 RunningAsController。
+    * 10. 将每个 partition 的 Leadership 信息发送给所有“活”着的 broker。
+    * 11. 若 auto.leader.rebalance.enable=true（默认值是true），则启动 partition-rebalance 线程。
+    * 12. 若 delete.topic.enable=true 且Delete Topic Patch(/admin/delete_topics)中有值，则删除相应的Topic。
    */
   def onControllerFailover() {
     if(isRunning) {
@@ -345,7 +361,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       partitionStateMachine.registerListeners()
 
 
-      //  "/brokers/ids"  监听节点的变化 ， broker节点的加入和下线
+
+      /**
+        * 监听节点("/brokers/ids")的变化 ， broker节点的加入和下线
+        * 就是controller感知集群的broker变化
+        */
       replicaStateMachine.registerListeners()
 
 
@@ -439,11 +459,16 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def onBrokerStartup(newBrokers: Seq[Int]) {
     info("New broker startup callback for %s".format(newBrokers.mkString(",")))
     val newBrokersSet = newBrokers.toSet
+
+
+    // 发送请求
     // send update metadata request to all live and shutting down brokers. Old brokers will get to know of the new
     // broker via this update.
     // In cases of controlled shutdown leaders will not be elected when a new broker comes up. So at least in the
     // common controlled shutdown case, the metadata will reach the new brokers faster
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
+
+
     // the very first thing to do when a new broker comes up is send it the entire list of partitions that it is
     // supposed to host. Based on that the broker starts the high watermark threads for the input list of partitions
     val allReplicasOnNewBrokers = controllerContext.replicasOnBrokers(newBrokersSet)
@@ -703,11 +728,15 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     inLock(controllerContext.controllerLock) {
       info("Controller starting up")
 
-      //
+      /**
+        * 注册一个跟zk会话断开的监听器
+        */
       registerSessionExpirationListener()
       isRunning = true
 
-      //
+      /**
+        * 竞争成为controller
+        */
       controllerElector.startup
       info("Controller startup complete")
     }
@@ -1057,6 +1086,8 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     try {
       brokerRequestBatch.newBatch()
       brokerRequestBatch.addUpdateMetadataRequestForBrokers(brokers, partitions)
+
+      //
       brokerRequestBatch.sendRequestsToBrokers(epoch)
     } catch {
       case e : IllegalStateException => {
