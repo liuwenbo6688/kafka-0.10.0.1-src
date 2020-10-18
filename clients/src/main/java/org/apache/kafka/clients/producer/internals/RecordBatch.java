@@ -34,6 +34,7 @@ public final class RecordBatch {
     private static final Logger log = LoggerFactory.getLogger(RecordBatch.class);
 
     public int recordCount = 0;
+    // batch中最大一条数据的大小
     public int maxRecordSize = 0;
     public volatile int attempts = 0;
     public final long createdMs;
@@ -67,13 +68,17 @@ public final class RecordBatch {
      * 
      * @return The RecordSend corresponding to this record or null if there isn't sufficient room.
      */
-    public FutureRecordMetadata tryAppend(long timestamp, byte[] key, byte[] value, Callback callback, long now) {
+    public FutureRecordMetadata tryAppend(long timestamp,
+                                          byte[] key,
+                                          byte[] value,
+                                          Callback callback,
+                                          long now) {
         if (!this.records.hasRoomFor(key, value)) {
             // batch 没有空间（写满了），返回null
             return null;
         } else {
             /**
-             * 通过  MemoryRecords 写数据
+             * 通过  MemoryRecords 写数据到byte buffer中（按照二进制协议）
              */
             long checksum = this.records.append(offsetCounter++, timestamp, key, value);
 

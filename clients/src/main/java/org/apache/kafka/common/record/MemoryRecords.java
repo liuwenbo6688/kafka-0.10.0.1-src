@@ -42,6 +42,7 @@ public class MemoryRecords implements Records {
     private ByteBuffer buffer;
 
     // indicate if the memory records is writable or not (i.e. used for appends or read-only)
+    // 是否可写的标志位
     private boolean writable;
 
     // Construct a writable memory records
@@ -99,7 +100,7 @@ public class MemoryRecords implements Records {
         compressor.putInt(size);
 
         /**
-         *
+         * 按照二进制的协议写入byte buffer
          */
         long crc = compressor.putRecord(timestamp, key, value);
 
@@ -125,6 +126,9 @@ public class MemoryRecords implements Records {
 
         return this.compressor.numRecordsWritten() == 0 ?
             this.initialCapacity >= Records.LOG_OVERHEAD + Record.recordSize(key, value) :
+                /**
+                 * 空间 > 已经写的数据大小 + 这条数据的大小
+                 */
             this.writeLimit >= this.compressor.estimatedBytesWritten() + Records.LOG_OVERHEAD + Record.recordSize(key, value);
     }
 

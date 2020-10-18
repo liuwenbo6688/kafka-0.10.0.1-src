@@ -52,6 +52,7 @@ public final class BufferPool {
     private final ReentrantLock lock;
 
     // Deque作为队列，缓存了一些ByteBuffer，也就是缓存了一批内存空间，可以用来复用的
+    // 初始化时是空的
     private final Deque<ByteBuffer> free;
 
     private final Deque<Condition> waiters;
@@ -113,7 +114,9 @@ public final class BufferPool {
      *         forever)
      */
     public ByteBuffer allocate(int size, long maxTimeToBlockMs) throws InterruptedException {
+
         if (size > this.totalMemory)
+            // 申请内存的大小不能大于缓冲区大小
             throw new IllegalArgumentException("Attempt to allocate " + size
                                                + " bytes, but there is a hard limit of "
                                                + this.totalMemory
@@ -136,15 +139,18 @@ public final class BufferPool {
                 // we have enough unallocated or pooled memory to immediately
                 // satisfy the request
                 freeUp(size);
-                //
+
+                // 可用内存空间减去16KB
                 this.availableMemory -= size;
                 lock.unlock();
+                // 直接返回16KB大小的ByteBuffer
                 return ByteBuffer.allocate(size);
             } else {
 
                 /**
                  * 不停地写数据，内存耗尽
                  * 没有足够空间的时候，会阻塞一段时间
+                 * 这块的代码写的很精妙 使用 Condition 实现
                  */
                 // we are out of memory and will have to block
                 int accumulated = 0;
@@ -160,7 +166,7 @@ public final class BufferPool {
                     long timeNs;
                     boolean waitingTimeElapsed;
                     try {
-                        // 就在这阻塞等待一段时间
+                        // 就在这阻塞等待一段时间， remainingTimeToBlockNs 是最大阻塞时间（不是无限制的等待）
                         waitingTimeElapsed = !moreMemory.await(remainingTimeToBlockNs, TimeUnit.NANOSECONDS);
                     } catch (InterruptedException e) {
                         this.waiters.remove(moreMemory);
@@ -195,6 +201,7 @@ public final class BufferPool {
 
                 // remove the condition for this thread to let the next thread
                 // in line start getting memory
+                // 移除 condition
                 Condition removed = this.waiters.removeFirst();
                 if (removed != moreMemory)
                     throw new IllegalStateException("Wrong condition: this shouldn't happen.");
@@ -240,8 +247,11 @@ public final class BufferPool {
         lock.lock();
         try {
             if (size == this.poolableSize && size == buffer.capacity()) {
+                /**
+                 * 清空buffer，放回到 free 队列
+                 * 达到buffer可以复用
+                 */
                 buffer.clear();
-                // 放回到 free 队列
                 this.free.add(buffer);
             } else {
                 /**
