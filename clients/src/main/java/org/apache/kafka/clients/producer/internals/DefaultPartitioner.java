@@ -75,6 +75,7 @@ public class DefaultPartitioner implements Partitioner {
             int nextValue = counter.getAndIncrement();
             List<PartitionInfo> availablePartitions = cluster.availablePartitionsForTopic(topic);
             if (availablePartitions.size() > 0) {
+                // 路由规则
                 int part = DefaultPartitioner.toPositive(nextValue) % availablePartitions.size();
                 return availablePartitions.get(part).partition();
             } else {
@@ -84,6 +85,7 @@ public class DefaultPartitioner implements Partitioner {
         } else {
             // 如果制定了分区key
             // 使用 工具类的murmur2算法计算一个hash值，相同key的hash值是一样的 ，就能保证路由到的分区是相同的
+            // 场景：同一个订单号保证严格顺序的情况，执行分区key为订单号即可
             // hash the keyBytes to choose a partition
             return DefaultPartitioner.toPositive(Utils.murmur2(keyBytes)) % numPartitions;
         }

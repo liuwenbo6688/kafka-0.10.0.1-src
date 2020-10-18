@@ -284,6 +284,7 @@ public class NetworkClient implements KafkaClient {
     public List<ClientResponse> poll(long timeout, long now) {
 
         /**
+         *
          * 更新元数据的过程
          */
         long metadataTimeout = metadataUpdater.maybeUpdate(now);
@@ -673,10 +674,17 @@ public class NetworkClient implements KafkaClient {
         @Override
         public boolean maybeHandleCompletedReceive(ClientRequest req, long now, Struct body) {
             short apiKey = req.request().header().apiKey();
+
+
             if (apiKey == ApiKeys.METADATA.id && req.isInitiatedByNetworkClient()) {
+                /**
+                 * 如果是拉取metadata的请求，在这里处理一波
+                 * 把metadata更新一下，唤醒那些阻塞等待元数据拉取的线程
+                 */
                 handleResponse(req.request().header(), body, now);
                 return true;
             }
+
             return false;
         }
 

@@ -324,8 +324,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             // 更新集群的 meta 数据
             // 初始化的时候，直接调用Metadata的update方法，去broker上拉取一次集群的元数据过来
             this.metadata.update(Cluster.bootstrap(addresses), time.milliseconds());
-            ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config.values());
 
+
+            ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config.values());
             // 网络通信组件
             NetworkClient client = new NetworkClient(
                     // connections.max.idle.ms  和broker的一个连接最多空闲多久就要被回收
@@ -497,7 +498,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         ProducerRecord<K, V> interceptedRecord = this.interceptors == null ? record : this.interceptors.onSend(record);
 
         /**
-         *
+         * 发送消息的主方法入口
          */
         return doSend(interceptedRecord, callback);
     }
@@ -561,7 +562,11 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             tp = new TopicPartition(record.topic(), partition);
             long timestamp = record.timestamp() == null ? time.milliseconds() : record.timestamp();
             log.trace("Sending record {} with callback {} to topic {} partition {}", record, callback, record.topic(), partition);
+
             // producer callback will make sure to call both 'callback' and interceptor callback
+            /**
+             * 回调函数
+             */
             Callback interceptCallback = this.interceptors == null ? callback : new InterceptorCallback<>(callback, this.interceptors, tp);
 
             //  非常关键的步骤：将消息添加到内存缓冲中
@@ -581,7 +586,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             // handling exceptions and record the errors;
             // for API exceptions return them in the future,
             // for other exceptions throw directly
-        } catch (ApiException e) {
+        }
+        // 异常处理体系
+        catch (ApiException e) {
             log.debug("Exception occurred during message send:", e);
             if (callback != null)
                 callback.onCompletion(null, e);
@@ -644,7 +651,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             sender.wakeup();
 
             /**
-             * 2. 一直等待元数据拉取成功
+             * 2.拉取元数据是异步，是由sender线程完成
+             * 一直等待元数据拉取成功
              */
             metadata.awaitUpdate(version, remainingWaitMs);
 
@@ -839,10 +847,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
      */
     private int partition(ProducerRecord<K, V> record, byte[] serializedKey , byte[] serializedValue, Cluster cluster) {
 
-        // 这边的意思是说，创建ProducerRecord的时候，是可以直接手动指定分区id的
+        // 这边的意思是说，创建ProducerRecord的时候，用户是可以直接手动指定数据发送到哪个分区
         // 一般也不会这么用
         Integer partition = record.partition();
+
         if (partition != null) {
+            // 一半不指定分区id
             List<PartitionInfo> partitions = cluster.partitionsForTopic(record.topic());
             int lastPartition = partitions.size() - 1;
             // they have given us a partition, use it

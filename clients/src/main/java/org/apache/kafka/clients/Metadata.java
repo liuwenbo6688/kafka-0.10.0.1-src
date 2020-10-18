@@ -74,7 +74,12 @@ public final class Metadata {
         this.lastRefreshMs = 0L;
         this.lastSuccessfulRefreshMs = 0L;
         this.version = 0;
+
+        /**
+         * 初始化空的集群信息
+         */
         this.cluster = Cluster.empty();
+
         this.needUpdate = false;
         this.topics = new HashSet<String>();
         this.listeners = new ArrayList<>();
@@ -141,7 +146,7 @@ public final class Metadata {
              *  此时就是在主线程里，就是要wait阻塞等待最多60s即可
              */
             if (remainingWaitMs != 0)
-                wait(remainingWaitMs); // 阻塞等待
+                wait(remainingWaitMs); // 阻塞等待，拉取元数据成功之后会notify，唤醒这边wait的线程
 
             long elapsed = System.currentTimeMillis() - begin;
             if (elapsed >= maxWaitMs)
