@@ -160,15 +160,20 @@ public class NetworkClient implements KafkaClient {
         if (node.isEmpty())
             throw new IllegalArgumentException("Cannot connect to empty node " + node);
 
-        // 判断是否已经准备好发送数据的条件了
+        /**
+         *  判断是否已经准备好发送数据的条件了
+         */
         if (isReady(node, now))
             return true;
 
 
+        /**
+         * 当前还没有和broker建立连接
+         * 先判断是否可以和node建立一个连接
+         * 如果可以初始化连接，就调用initiateConnect()建立连接
+         */
         if (connectionStates.canConnect(node.idString(), now))
-            // 判断是否可以和node建立一个连接
             // if we are interested in sending to a node and we don't have a connection to it, initiate one
-            // 如果可以初始化连接，就建立连接
             initiateConnect(node, now);
 
         // 走到这里，只是去建立了连接，会返回false，不会立即发送数据
@@ -584,6 +589,7 @@ public class NetworkClient implements KafkaClient {
             this.connectionStates.connecting(nodeConnectionId, now);
 
             // 建立底层的网络连接   SocketChannel 注册到 jdk的selector上
+            // 这个方法只是初始化连接， 最终会在 poll(long) 方法中完成
             selector.connect(nodeConnectionId,
                              new InetSocketAddress(node.host(), node.port()),
                              this.socketSendBuffer,

@@ -264,8 +264,10 @@ public class Sender implements Runnable {
         // otherwise the select time will be the time difference between now and the metadata expiry time;
 
         /**
+         * *************************************************************
          * 最牛逼的一个方法，一切连接，读取和发送数据的流程都在poll中实现
          * 最重要进入这个方法, 包括发送数据和读取响应
+         * *************************************************************
          */
         this.client.poll(pollTimeout, now);
     }
@@ -427,8 +429,12 @@ public class Sender implements Runnable {
             produceRecordsByPartition.put(tp, batch.records.buffer());
             recordsByPartition.put(tp, batch);
         }
+
+        /**
+         * 构造的请求
+         */
         ProduceRequest request = new ProduceRequest(acks, timeout, produceRecordsByPartition);
-        RequestSend send = new RequestSend(Integer.toString(destination),
+        RequestSend send = new RequestSend(Integer.toString(destination),// broker
                                            this.client.nextRequestHeader(ApiKeys.PRODUCE), // *** 请求Produce接口
                                            request.toStruct());
 

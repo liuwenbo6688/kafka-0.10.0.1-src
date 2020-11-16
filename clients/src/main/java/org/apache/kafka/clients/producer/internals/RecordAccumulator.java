@@ -70,6 +70,11 @@ public final class RecordAccumulator {
     // 压缩方式
     private final CompressionType compression;
     private final long lingerMs;
+
+    /**
+     * retry.backoff.ms
+     * 重试最大间隔时间
+     */
     private final long retryBackoffMs;
 
     // 内存缓冲池
@@ -402,7 +407,7 @@ public final class RecordAccumulator {
             TopicPartition part = entry.getKey();
             Deque<RecordBatch> deque = entry.getValue();
 
-            Node leader = cluster.leaderFor(part);
+            Node leader = cluster.leaderFor(part);// 获取partition的leader节点
             if (leader == null) {
                 // 如果这个分区的leader不知道是谁， unknownLeadersExist字段置为true，后面会进行元数据拉取
                 unknownLeadersExist = true;
@@ -410,7 +415,10 @@ public final class RecordAccumulator {
 
                 synchronized (deque) { // 对deque的读和写都是加锁的，还是重量级的synchronized，保证线程的安全性
 
-                    // 每一轮循环只检查第一个batch，判断第一个batch是否可以发送
+
+                    /**
+                     * 每一轮循环只检查第一个batch，判断第一个batch是否可以发送（peekFirst不会从队列中删除）
+                     */
                     RecordBatch batch = deque.peekFirst();
 
                     if (batch != null) {
@@ -435,7 +443,7 @@ public final class RecordAccumulator {
                          * 超过batch的最长等待时间， 和linger.ms比较
                          */
                         boolean expired = waitedTimeMs >= timeToWaitMs;
-                        // 综合算出是否可以发出
+                        // 综合算出是否可以发送这个Batch
                         boolean sendable = full || expired || exhausted
                                 || closed || flushInProgress();
                         if (sendable && !backingOff) {
@@ -444,6 +452,7 @@ public final class RecordAccumulator {
                         } else {
                             /**
                              *  nextReadyCheckDelayMs:
+                             *  下次需要检查是否有batch需要发送，等待的时间间隔
                              */
                             // Note that this results in a conservative estimate since an un-sendable partition may have
                             // a leader that will later be found to have sendable data. However, this is good enough
@@ -700,6 +709,9 @@ public final class RecordAccumulator {
          */
         public final Set<Node> readyNodes;
 
+        /**
+         * 下次需要检查是否有batch需要发送的间隔时间
+         */
         public final long nextReadyCheckDelayMs;
 
         /**

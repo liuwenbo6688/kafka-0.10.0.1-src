@@ -32,8 +32,15 @@ import java.security.Principal;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 
 public class PlaintextTransportLayer implements TransportLayer {
+
+    /**
+     * TransportLayer 所谓的传输层
+     * 就是封装nio的  SocketChannel 和 SelectionKey
+     */
     private final SelectionKey key;
     private final SocketChannel socketChannel;
+
+
     private final Principal principal = KafkaPrincipal.ANONYMOUS;
 
     public PlaintextTransportLayer(SelectionKey key) throws IOException {

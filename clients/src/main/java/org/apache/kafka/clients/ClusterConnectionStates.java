@@ -94,6 +94,9 @@ final class ClusterConnectionStates {
      * @param id The id of the connection to check
      */
     public boolean isConnected(String id) {
+        /**
+         * 节点的状态为已连接（CONNECTED）
+         */
         NodeConnectionState state = nodeState.get(id);
         return state != null && state.state == ConnectionState.CONNECTED;
     }

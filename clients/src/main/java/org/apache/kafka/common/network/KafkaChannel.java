@@ -44,12 +44,14 @@ public class KafkaChannel {
     private final int maxReceiveSize;
 
     /**
-     *
+     * 最近一次读出来的响应
+     * 也是不断变换的
      */
     private NetworkReceive receive;
 
     /**
      *  交给底层channel发送出去的请求
+     *  是不断变换的
      */
     private Send send;
 

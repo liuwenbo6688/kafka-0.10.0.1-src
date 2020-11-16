@@ -76,6 +76,8 @@ import org.slf4j.LoggerFactory;
  * This class is not thread safe!
  * 针对多个broker的网络连接，执行非阻塞的IO操作
  * 这个class是 非线程安全 的！！！！！！
+ *
+ * 通过 poll()方法来进行实际的 发送请求、接收响应、处理建立连接和断开连接
  */
 public class Selector implements Selectable {
 
@@ -112,7 +114,13 @@ public class Selector implements Selectable {
     private final SelectorMetrics sensors;
     private final String metricGrpPrefix;
     private final Map<String, String> metricTags;
+
+    /**
+     *  构造KafkaChannel的构造器类
+     */
     private final ChannelBuilder channelBuilder;
+
+
     private final Map<String, Long> lruConnections;
     private final long connectionsMaxIdleNanos;
     private final int maxReceiveSize;
@@ -135,16 +143,27 @@ public class Selector implements Selectable {
         }
 
         this.maxReceiveSize = maxReceiveSize;
+        // 一个网络连接最长空闲时间
         this.connectionsMaxIdleNanos = connectionMaxIdleMs * 1000 * 1000;
         this.time = time;
         this.metricGrpPrefix = metricGrpPrefix;
         this.metricTags = metricTags;
 
+        /**
+         *  保存了每个 broker id 到 Channel的映射关系
+         */
         this.channels = new HashMap<>();
 
+        // 已经发送出去的请求
         this.completedSends = new ArrayList<>();
+
+        // 已经接收回来的响应
         this.completedReceives = new ArrayList<>();
+
+        // 每个broker接收到的，但是还没有被处理的响应
         this.stagedReceives = new HashMap<>();
+
+
         this.immediatelyConnectedKeys = new HashSet<>();
         this.connected = new ArrayList<>();
         this.disconnected = new ArrayList<>();
@@ -188,15 +207,25 @@ public class Selector implements Selectable {
          * 工业级的NIO  KeepAlive  SocketBuffer  TcpNoDelay 都是如何设置的
          */
         SocketChannel socketChannel = SocketChannel.open();
-        socketChannel.configureBlocking(false);
+        socketChannel.configureBlocking(false); // 非阻塞
 
         // 设置socket的参数，工业级配置
         Socket socket = socketChannel.socket();
+        /**
+         *
+         */
         socket.setKeepAlive(true);
+        /**
+         * 设置发送、接收缓冲区
+         */
         if (sendBufferSize != Selectable.USE_DEFAULT_BUFFER_SIZE)
             socket.setSendBufferSize(sendBufferSize);
         if (receiveBufferSize != Selectable.USE_DEFAULT_BUFFER_SIZE)
             socket.setReceiveBufferSize(receiveBufferSize);
+
+        /**
+         * 不要延迟发送，关闭nagle算法
+         */
         socket.setTcpNoDelay(true);
 
         boolean connected;
@@ -212,7 +241,7 @@ public class Selector implements Selectable {
             throw e;
         }
 
-        // 直接注册到nioSelector，让他监视 OP_CONNECT 事件
+        // 把socket channel注册到nioSelector上，让他监视 OP_CONNECT 事件
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_CONNECT);
 
 
@@ -234,7 +263,9 @@ public class Selector implements Selectable {
         this.channels.put(id, channel);
 
 
-        if (connected) { // 如果立即就连接上了
+        if (connected) {
+            // 如果立即就连接上了
+
             // OP_CONNECT won't trigger for immediately connected channels
             log.debug("Immediately connected to node {}", channel.id());
             // 立即就连接上的SelectionKey，缓存到immediatelyConnectedKeys中
