@@ -50,9 +50,8 @@ class KafkaRequestHandler(id: Int,
 
 
           /**
-            * 不断地从requestChannel 拿到接收的请求 Request
-            * 然后交给  KafkaApis 处理
-            */
+            * 1. 不断地从requestChannel 拿到接收的请求 Request
+           * */
           req = requestChannel.receiveRequest(300)
 
 
@@ -70,7 +69,7 @@ class KafkaRequestHandler(id: Int,
 
 
         /**
-          *   转交给  KafkaApis 处理
+          *   2.  转交给  KafkaApis 处理
           *   KafkaApis 封装了处理各种不同请求的业务逻辑
           */
         apis.handle(req)
@@ -95,7 +94,11 @@ class KafkaRequestHandlerPool(val brokerId: Int,
 
   this.logIdent = "[Kafka Request Handler on Broker " + brokerId + "], "
 
-  // numThreads(num.io.threads) ,默认是8个
+  /**
+   * numThreads(num.io.threads) ,默认是8个
+   *
+   * 多个 KafkaRequestHandler 从 RequestChannel 并发拉取数据，提高数据处理速率
+   */
   val threads = new Array[Thread](numThreads)
   val runnables = new Array[KafkaRequestHandler](numThreads)
   for (i <- 0 until numThreads) {

@@ -328,6 +328,10 @@ class Log(val dir: File,
    * @return Information about the appended messages including the first and last offset.
    */
   def append(messages: ByteBufferMessageSet, assignOffsets: Boolean = true): LogAppendInfo = {
+
+    /**
+     * 获取消息的概要信息
+     */
     val appendInfo = analyzeAndValidateMessageSet(messages)
 
     // if we have any valid messages, append them to the log
@@ -335,6 +339,9 @@ class Log(val dir: File,
       return appendInfo
 
     // trim any invalid bytes or partial messages before appending it to the on-disk log
+    /**
+     * 保留有效数据
+     */
     var validMessages = trimInvalidBytes(messages, appendInfo)
 
     try {
@@ -343,11 +350,19 @@ class Log(val dir: File,
       lock synchronized {
 
         if (assignOffsets) {
+          /**
+           * assignOffsets = true : 这个分支，是producer发送的数据，需要broker端分配offset
+           *
+           * assignOffsets = false,代表从leader同步数据，这样offset都是已经存在的了，不需要再分配
+           */
           // assign offsets to the message set
           val offset = new LongRef(nextOffsetMetadata.messageOffset)
           appendInfo.firstOffset = offset.value
           val now = time.milliseconds
           val (validatedMessages, messageSizesMaybeChanged) = try {
+            /**
+             *
+             */
             validMessages.validateMessagesAndAssignOffsets(offset,
                                                            now,
                                                            appendInfo.sourceCodec,
@@ -443,42 +458,56 @@ class Log(val dir: File,
     var firstOffset, lastOffset = -1L
     var sourceCodec: CompressionCodec = NoCompressionCodec
     var monotonic = true
+
+    /**
+     * shallowIterator返回没有解压缩的数据的迭代器
+     */
     for(messageAndOffset <- messages.shallowIterator) {
-      // update the first offset if on the first message
-      if(firstOffset < 0)
-        firstOffset = messageAndOffset.offset
-      // check that offsets are monotonically increasing
-      if(lastOffset >= messageAndOffset.offset)
-        monotonic = false
-      // update the last offset seen
-      lastOffset = messageAndOffset.offset
 
-      val m = messageAndOffset.message
+          // update the first offset if on the first message
+          if(firstOffset < 0)
+            firstOffset = messageAndOffset.offset
 
-      // Check if the message sizes are valid.
-      val messageSize = MessageSet.entrySize(m)
-      if(messageSize > config.maxMessageSize) {
-        BrokerTopicStats.getBrokerTopicStats(topicAndPartition.topic).bytesRejectedRate.mark(messages.sizeInBytes)
-        BrokerTopicStats.getBrokerAllTopicsStats.bytesRejectedRate.mark(messages.sizeInBytes)
-        throw new RecordTooLargeException("Message size is %d bytes which exceeds the maximum configured message size of %d."
-          .format(messageSize, config.maxMessageSize))
-      }
+          // check that offsets are monotonically increasing
+          if(lastOffset >= messageAndOffset.offset)
+            monotonic = false
 
-      // check the validity of the message by checking CRC
-      m.ensureValid()
+          // update the last offset seen
+          lastOffset = messageAndOffset.offset
 
-      shallowMessageCount += 1
-      validBytesCount += messageSize
+          val m = messageAndOffset.message
 
-      val messageCodec = m.compressionCodec
-      if(messageCodec != NoCompressionCodec)
-        sourceCodec = messageCodec
+          // Check if the message sizes are valid.
+          val messageSize = MessageSet.entrySize(m)
+          if(messageSize > config.maxMessageSize) { // 比较设置的单条数据的最大字节数 max.message.bytes
+            BrokerTopicStats.getBrokerTopicStats(topicAndPartition.topic).bytesRejectedRate.mark(messages.sizeInBytes)
+            BrokerTopicStats.getBrokerAllTopicsStats.bytesRejectedRate.mark(messages.sizeInBytes)
+            throw new RecordTooLargeException("Message size is %d bytes which exceeds the maximum configured message size of %d."
+              .format(messageSize, config.maxMessageSize))
+          }
+
+          // check the validity of the message by checking CRC
+          m.ensureValid()
+
+          shallowMessageCount += 1
+          validBytesCount += messageSize
+
+          val messageCodec = m.compressionCodec
+          if(messageCodec != NoCompressionCodec)
+            sourceCodec = messageCodec
     }
 
     // Apply broker-side compression if any
     val targetCodec = BrokerCompressionCodec.getTargetCompressionCodec(config.compressionType, sourceCodec)
 
-    LogAppendInfo(firstOffset, lastOffset, Message.NoTimestamp, sourceCodec, targetCodec, shallowMessageCount, validBytesCount, monotonic)
+    LogAppendInfo(firstOffset,
+                  lastOffset,
+                  Message.NoTimestamp,
+                  sourceCodec,
+                  targetCodec,
+                  shallowMessageCount,
+                  validBytesCount,
+                  monotonic)
   }
 
   /**
@@ -622,7 +651,7 @@ class Log(val dir: File,
 
   /**
    *  The offset of the next message that will be appended to the log
-    * LEO
+    * 获取LEO
    */
   def logEndOffset: Long = nextOffsetMetadata.messageOffset
 
@@ -647,20 +676,23 @@ class Log(val dir: File,
     if (segment.size > config.segmentSize - messagesSize ||
         segment.size > 0 && time.milliseconds - segment.created > config.segmentMs - segment.rollJitterMs ||
         segment.index.isFull) {
-      // 需要新滚一个日志段
-      debug("Rolling new log segment in %s (log_size = %d/%d, index_size = %d/%d, age_ms = %d/%d)."
-            .format(name,
-                    segment.size,
-                    config.segmentSize,
-                    segment.index.entries,
-                    segment.index.maxEntries,
-                    time.milliseconds - segment.created,
-                    config.segmentMs - segment.rollJitterMs))
 
+        debug("Rolling new log segment in %s (log_size = %d/%d, index_size = %d/%d, age_ms = %d/%d)."
+              .format(name,
+                      segment.size,
+                      config.segmentSize,
+                      segment.index.entries,
+                      segment.index.maxEntries,
+                      time.milliseconds - segment.created,
+                      config.segmentMs - segment.rollJitterMs))
+
+      /**
+       * 滚动一个新的日志段
+       */
       roll()
     } else {
 
-      segment
+          segment
     }
   }
 
@@ -676,12 +708,15 @@ class Log(val dir: File,
       // LEO永远大于最后一条数据的offset
       val newOffset = logEndOffset
 
-      // 日志文件 .log  +  索引文件 .index
-      // 在分区目录下，构建一个新的文件，用LEO作为文件名就可以了
+      /**
+       * 生成日志文件 xxxx.log  +  索引文件 xxxx.index
+       * 在分区目录下，构建一个新的文件，用LEO作为文件名就可以了
+       */
       val logFile = logFilename(dir, newOffset)
       val indexFile = indexFilename(dir, newOffset)
 
       for(file <- List(logFile, indexFile); if file.exists) {
+        // 文件存在需要先删除
         warn("Newly rolled segment file " + file.getName + " already exists; deleting it first")
         file.delete()
       }
@@ -695,7 +730,8 @@ class Log(val dir: File,
       }
 
       /**
-        * 初始化一个  LogSegment
+       * 初始化一个  LogSegment
+       * 并加入到 segments 队列里
         */
       val segment = new LogSegment(dir,
                                    startOffset = newOffset,
@@ -706,7 +742,6 @@ class Log(val dir: File,
                                    fileAlreadyExists = false,
                                    initFileSize = initFileSize,
                                    preallocate = config.preallocate)
-
       val prev = addSegment(segment)
 
       if(prev != null)
@@ -980,6 +1015,7 @@ object Log {
   val CleanShutdownFile = ".kafka_cleanshutdown"
 
   /**
+   * 根据offset值，格式化出文件的前缀（20位整数）
    * Make log segment file name from offset bytes. All this does is pad out the offset number with zeros
    * so that ls sorts the files numerically.
    * @param offset The offset to use in the file name

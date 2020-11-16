@@ -356,7 +356,7 @@ class ReplicaManager(val config: KafkaConfig,
                      messagesPerPartition: Map[TopicPartition, MessageSet], // 每个分区对应一个 MessageSet
                      responseCallback: Map[TopicPartition, PartitionResponse] => Unit) {
 
-    if (isValidRequiredAcks(requiredAcks) ) {//是否是有效的acks，只能是 -1 ，0， 1
+    if (isValidRequiredAcks(requiredAcks) ) { //是否是有效的acks，只能是 -1 ，0， 1
       val sTime = SystemTime.milliseconds
 
 
@@ -452,8 +452,11 @@ class ReplicaManager(val config: KafkaConfig,
                                requiredAcks: Short): Map[TopicPartition, LogAppendResult] = {
     trace("Append [%s] to local log ".format(messagesPerPartition))
 
-    // messagesPerPartition 进行map
+
     messagesPerPartition.map { case (topicPartition, messages) =>
+      /**
+       *  针对每个分区 TopicPartition，写入数据 MessageSet
+       */
       BrokerTopicStats.getBrokerTopicStats(topicPartition.topic).totalProduceRequestRate.mark()
       BrokerTopicStats.getBrokerAllTopicsStats().totalProduceRequestRate.mark()
 
@@ -466,8 +469,6 @@ class ReplicaManager(val config: KafkaConfig,
       } else {
         // 正常情况，走这里，非内部topic的情况
         try {
-
-
           val partitionOpt = getPartition(topicPartition.topic, topicPartition.partition)
           val info = partitionOpt match {
             case Some(partition) =>

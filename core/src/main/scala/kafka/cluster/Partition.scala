@@ -510,7 +510,12 @@ class Partition(val topic: String,
           val inSyncSize = inSyncReplicas.size
 
           // Avoid writing to leader if there are not enough insync replicas to make it safe
-          if (inSyncSize < minIsr && requiredAcks == -1) {//
+          if (inSyncSize < minIsr && requiredAcks == -1) {
+            /**
+             * 很重要的一个判断逻辑
+             * 当前ISR列表中的数量 < 设置的“min.insync.replicas”
+             * 并且 ack 设置的是-1
+             */
             throw new NotEnoughReplicasException("Number of insync replicas for partition [%s,%d] is [%d], below required minimum [%d]"
               .format(topic, partitionId, inSyncSize, minIsr))
           }

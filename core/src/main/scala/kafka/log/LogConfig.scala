@@ -60,7 +60,7 @@ case class LogConfig(props: java.util.Map[_, _]) extends AbstractConfig(LogConfi
    */
 
 
-  // segment.bytes
+  // segment.bytes  日志段的大小，默认1GB
   val segmentSize = getInt(LogConfig.SegmentBytesProp)
   // segment.ms
   val segmentMs = getLong(LogConfig.SegmentMsProp)

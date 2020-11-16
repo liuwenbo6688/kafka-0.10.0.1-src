@@ -75,7 +75,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         format(request.requestDesc(true), request.connectionId, request.securityProtocol, request.session.principal))
 
       ApiKeys.forId(request.requestId) match {
-        // 生产
+
+        /**
+         * 生产者发送的请求
+         */
         case ApiKeys.PRODUCE => handleProducerRequest(request)
 
 

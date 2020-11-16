@@ -52,9 +52,17 @@ object Kafka extends Logging {
     props
   }
 
+  /**
+   * kafka broker 启动入口
+   * @param args
+   */
   def main(args: Array[String]): Unit = {
     try {
       val serverProps = getPropsFromArgs(args)
+
+      /**
+       * 1. 从配置文件构造一个 KafkaServerStartable
+       */
       val kafkaServerStartable = KafkaServerStartable.fromProps(serverProps)
 
       // attach shutdown handler to catch control-c
@@ -64,7 +72,12 @@ object Kafka extends Logging {
         }
       })
 
+      /**
+       * 2. 启动 kafka
+       */
       kafkaServerStartable.startup
+
+
       kafkaServerStartable.awaitShutdown
     }
     catch {

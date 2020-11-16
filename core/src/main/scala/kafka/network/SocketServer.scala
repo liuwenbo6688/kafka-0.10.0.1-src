@@ -82,6 +82,7 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
 
   /**
    * Start the socket server
+   * 启动网络socket服务
    */
   def startup() {
     this.synchronized {
@@ -89,9 +90,9 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
       // 每个ip可以和broker建立的最大连接数
       connectionQuotas = new ConnectionQuotas(maxConnectionsPerIp, maxConnectionsPerIpOverrides)
 
-      // socket.send.buffer.bytes
+      // socket.send.buffer.bytes      发送缓冲区
       val sendBufferSize = config.socketSendBufferBytes
-      // socket.receive.buffer.bytes
+      // socket.receive.buffer.bytes   接收缓冲区
       val recvBufferSize = config.socketReceiveBufferBytes
       // broker.id
       val brokerId = config.brokerId
@@ -106,7 +107,7 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
           * 初始化 processors
           */
         for (i <- processorBeginIndex until processorEndIndex)
-          processors(i) = newProcessor(i, connectionQuotas, protocol)
+                processors(i) = newProcessor(i, connectionQuotas, protocol)
 
         // 初始化 Acceptor线程
         val acceptor = new Acceptor(endpoint,
@@ -355,6 +356,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
 
   /*
    * Create a server socket to listen for connections on.
+   * 创建 ServerSocketChannel 的标准代码
    */
   private def openServerSocket(host: String, port: Int): ServerSocketChannel = {
     val socketAddress =
@@ -396,7 +398,10 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                   socketChannel.socket.getSendBufferSize, sendBufferSize,
                   socketChannel.socket.getReceiveBufferSize, recvBufferSize))
 
-      // socketChannel 交给 processor
+
+      /**
+       * socketChannel 交给 processor
+       */
       processor.accept(socketChannel)
     } catch {
       case e: TooManyConnectionsException =>
@@ -464,7 +469,7 @@ private[kafka] class Processor(val id: Int,
   )
 
   /**
-    * kafka selector
+    * kafka selector，用了scala里的语法糖，重命名为KSelector
     */
   private val selector = new KSelector(
     maxRequestSize,
@@ -531,7 +536,7 @@ private[kafka] class Processor(val id: Int,
         curr.responseAction match {
 
           /**
-            *
+            * 1.
             */
           case RequestChannel.NoOpAction =>
             // There is no response to send to the client, we need to read more pipelined requests
@@ -541,13 +546,13 @@ private[kafka] class Processor(val id: Int,
             selector.unmute(curr.request.connectionId)
 
           /**
-            * 发送响应消息
+            * 2.发送响应消息
             */
           case RequestChannel.SendAction =>
             sendResponse(curr)
 
           /**
-            *
+            * 3.
             */
           case RequestChannel.CloseConnectionAction =>
             curr.request.updateRequestMetrics

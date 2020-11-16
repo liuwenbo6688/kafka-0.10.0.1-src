@@ -121,7 +121,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
 
   /**
-    *
+    * 主要负责处理请求的组件
     */
   var apis: KafkaApis = null
 
@@ -140,17 +140,17 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
     */
   var requestHandlerPool: KafkaRequestHandlerPool = null
 
-  // 负责磁盘读写的
+  // 负责磁盘读写的组件
   var logManager: LogManager = null
 
-  // 负责副本的同步
+  // 负责副本的同步的组件
   var replicaManager: ReplicaManager = null
 
   var dynamicConfigHandlers: Map[String, ConfigHandler] = null
   var dynamicConfigManager: DynamicConfigManager = null
 
   /**
-    *
+    *  负责管理消费者的组件
     */
   var groupCoordinator: GroupCoordinator = null
 
@@ -225,17 +225,20 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         config.brokerId =  getBrokerId
         this.logIdent = "[Kafka Server " + config.brokerId + "], "
 
-        // 核心组件 socket server
-        // 网络通信服务器
+        /**
+         * 核心组件 socket server
+         * 网络通信服务器
+         */
         socketServer = new SocketServer(config, metrics, kafkaMetricsTime)
         socketServer.startup()
 
 
-        // 初始化 replica manager
-        // 封装了 LogManager ，管理副本数据
-        // 将副本写入本地磁盘
-        // 从其他的 Broker 去拉取数据进行同步
-        /* start replica manager */
+        /* start replica manager
+        *  初始化 replica manager
+        *  封装了 LogManager ，管理副本数据
+        *  将副本写入本地磁盘
+        *  从其他的 Broker 去拉取数据进行同步
+        * */
         replicaManager = new ReplicaManager(config,
                                             metrics,
                                             time,
@@ -260,9 +263,9 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         // startup方法会选举出来一个active controller
         kafkaController.startup()
 
-
-        // 负责管理消费者的组件
-        /* start group coordinator */
+        /* start group coordinator
+        *  负责管理消费者的组件
+        *  */
         groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, kafkaMetricsTime)
         groupCoordinator.startup()
 
@@ -276,7 +279,6 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
         /**
           *  KafkaApis  KafkaRequestHandlerPool  主要负责处理请求
-          *
           *  KafkaRequestHandlerPool 把请求交给  KafkaApis
           */
         /* start processing requests */

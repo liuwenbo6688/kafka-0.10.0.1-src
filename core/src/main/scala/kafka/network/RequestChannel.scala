@@ -183,7 +183,6 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requ
   private var responseListeners: List[(Int) => Unit] = Nil
 
   // 请求队列, 这是一个阻塞队列
-  //
   private val requestQueue = new ArrayBlockingQueue[RequestChannel.Request](queueSize)
 
   // 响应结果队列

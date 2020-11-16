@@ -87,9 +87,11 @@ class LogSegment(val log: FileMessageSet,
     if (messages.sizeInBytes > 0) {
       trace("Inserting %d bytes at offset %d at position %d".format(messages.sizeInBytes, offset, log.sizeInBytes()))
 
-      // append an entry to the index (if needed)
-      // 先写index文件  index本质是一个稀疏索引
-      // indexIntervalBytes 默认 4096，也就是每写入4096条数据写入一条索引
+      /**
+       * append an entry to the index (if needed)
+       * 先写index文件  index本质是一个稀疏索引
+       * indexIntervalBytes 默认 4096，也就是每写入4096条数据写入一条索引
+       */
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
         /**
           * OffsetIndex的append，追加稀疏索引
@@ -98,9 +100,10 @@ class LogSegment(val log: FileMessageSet,
         this.bytesSinceLastIndexEntry = 0 // 重新置为0，下次到4096的时候，再写一条系数索引
       }
 
-
-      // 这就是顺序写入数据， ByteBufferMessageSet封装了本次写入的全部数据
-      // append the messages
+      /**
+       *  append the messages
+       *  这就是顺序写入数据， ByteBufferMessageSet封装了本次写入的全部数据
+       */
       log.append(messages)
 
       this.bytesSinceLastIndexEntry += messages.sizeInBytes

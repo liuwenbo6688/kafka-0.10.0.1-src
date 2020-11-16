@@ -30,6 +30,10 @@ object KafkaServerStartable {
 }
 
 class KafkaServerStartable(val serverConfig: KafkaConfig) extends Logging {
+
+  /**
+   * 代表一个 kafka server
+   */
   private val server = new KafkaServer(serverConfig)
 
   def startup() {
