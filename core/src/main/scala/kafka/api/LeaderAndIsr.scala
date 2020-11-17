@@ -55,6 +55,10 @@ object PartitionStateInfo {
   }
 }
 
+
+/**
+  * 代表每个Partition的元数据
+  */
 case class PartitionStateInfo(leaderIsrAndControllerEpoch: LeaderIsrAndControllerEpoch,
                               allReplicas: Set[Int]) {
   def replicationFactor = allReplicas.size

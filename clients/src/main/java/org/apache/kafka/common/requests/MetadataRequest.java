@@ -31,6 +31,9 @@ public class MetadataRequest extends AbstractRequest {
 
     private static final MetadataRequest ALL_TOPICS_REQUEST = new MetadataRequest((List<String>) null); // Unusual cast to work around constructor ambiguity
 
+    /**
+     * client的都是按需加载，指定需要加载哪些topic
+     */
     private final List<String> topics;
 
     public static MetadataRequest allTopics() {

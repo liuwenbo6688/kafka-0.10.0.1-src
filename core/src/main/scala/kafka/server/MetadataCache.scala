@@ -38,7 +38,13 @@ import org.apache.kafka.common.requests.{MetadataResponse, PartitionState, Updat
  */
 private[server] class MetadataCache(brokerId: Int) extends Logging {
   private val stateChangeLogger = KafkaController.stateChangeLogger
+
+
+  /**
+    * 缓存元数据的结构
+    */
   private val cache = mutable.Map[String, mutable.Map[Int, PartitionStateInfo]]()
+
   private var controllerId: Option[Int] = None
   private val aliveBrokers = mutable.Map[Int, Broker]()
   private val aliveNodes = mutable.Map[Int, collection.Map[SecurityProtocol, Node]]()
@@ -69,8 +75,19 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
 
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
   private def getPartitionMetadata(topic: String, protocol: SecurityProtocol, errorUnavailableEndpoints: Boolean): Option[Iterable[MetadataResponse.PartitionMetadata]] = {
+
+    /**
+      * cache 缓存了所有的元数据信息
+      */
     cache.get(topic).map { partitions =>
+
+      /**
+        * 一个topic的所有partition
+        */
       partitions.map { case (partitionId, partitionState) =>
+        /**
+          * 处理每一个 partition
+          */
         val topicPartition = TopicAndPartition(topic, partitionId)
 
         val leaderAndIsr = partitionState.leaderIsrAndControllerEpoch.leaderAndIsr
@@ -113,9 +130,12 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
   def getTopicMetadata(topics: Set[String], protocol: SecurityProtocol, errorUnavailableEndpoints: Boolean = false): Seq[MetadataResponse.TopicMetadata] = {
     inReadLock(partitionMetadataLock) {
       topics.toSeq.flatMap { topic =>
-        getPartitionMetadata(topic, protocol, errorUnavailableEndpoints).map { partitionMetadata =>
-          new MetadataResponse.TopicMetadata(Errors.NONE, topic, Topic.isInternal(topic), partitionMetadata.toBuffer.asJava)
-        }
+          /**
+            *
+            */
+          getPartitionMetadata(topic, protocol, errorUnavailableEndpoints).map { partitionMetadata =>
+              new MetadataResponse.TopicMetadata(Errors.NONE, topic, Topic.isInternal(topic), partitionMetadata.toBuffer.asJava)
+          }
       }
     }
   }

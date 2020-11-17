@@ -92,72 +92,71 @@ class KafkaApis(val requestChannel: RequestChannel,
           * 2）消费者从broker消费数据请求
           */
         case ApiKeys.FETCH => handleFetchRequest(request)
-
-
+        /**
+          *
+          */
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
-
         /**
           * 获取所有topic的元数据
           */
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
-
         /**
           * 处理topic的partition的leader和isr变更请求
           */
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
-
+        /**
+          *
+          */
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
-
+        /**
+          *
+          */
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
-
         /**
           * 处理controller的shutdown请求
           */
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
-
         /**
-          * 提交 offset
+          * commit offset
+          * 提交offset
           */
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
-
         /**
-          *
+          * 拉取指定group的分区的消费进度
           */
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
-
         /**
-          *
+          * 查找groupId对应的 GroupCoordinator
           */
         case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request)
-
         /**
           * 加入 consumer group
           */
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
-
         /**
           * 心跳请求
           */
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
-
+        /**
+          *
+          */
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
-
         /**
           * consumer leader 制定分区方案发送给 GroupCoordinator
           */
         case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)
-
+        /**
+          *
+          */
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
-
         /**
           * 请求 consumer group 信息
           */
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
 
+
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
-
         case ApiKeys.API_VERSIONS => handleApiVersionsRequest(request)
-
         case requestId => throw new KafkaException("Unknown api code " + requestId)
       }
 
@@ -600,6 +599,8 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleOffsetRequest(request: RequestChannel.Request) {
     val correlationId = request.header.correlationId
     val clientId = request.header.clientId
+
+
     val offsetRequest = request.body.asInstanceOf[ListOffsetRequest]
 
     val (authorizedRequestInfo, unauthorizedRequestInfo) = offsetRequest.offsetData.asScala.partition {
@@ -618,11 +619,13 @@ class KafkaApis(val requestChannel: RequestChannel,
           replicaManager.getLeaderReplicaIfLocal(topicPartition.topic, topicPartition.partition)
         else
           replicaManager.getReplicaOrException(topicPartition.topic, topicPartition.partition)
+
         val offsets = {
           val allOffsets = fetchOffsets(replicaManager.logManager,
             topicPartition,
             partitionData.timestamp,
             partitionData.maxNumOffsets)
+
           if (offsetRequest.replicaId != ListOffsetRequest.CONSUMER_REPLICA_ID) {
             allOffsets
           } else {
@@ -656,6 +659,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val responseHeader = new ResponseHeader(correlationId)
     val response = new ListOffsetResponse(mergedResponseMap.asJava)
 
+    // 返回
     requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, response)))
   }
 
@@ -750,7 +754,9 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   private def getTopicMetadata(topics: Set[String], securityProtocol: SecurityProtocol, errorUnavailableEndpoints: Boolean): Seq[MetadataResponse.TopicMetadata] = {
+
     val topicResponses = metadataCache.getTopicMetadata(topics, securityProtocol, errorUnavailableEndpoints)
+
     if (topics.isEmpty || topicResponses.size == topics.size) {
       topicResponses
     } else {
@@ -776,6 +782,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val metadataRequest = request.body.asInstanceOf[MetadataRequest]
     val requestVersion = request.header.apiVersion()
 
+    // 需要拉取的topic
     val topics =
     // Handle old metadata request logic. Version 0 has no way to specify "no topics".
       if (requestVersion == 0) {
@@ -789,6 +796,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         else
           metadataRequest.topics.asScala.toSet
       }
+
 
     var (authorizedTopics, unauthorizedTopics) =
       topics.partition(topic => authorize(request.session, Describe, new Resource(Topic, topic)))
@@ -805,17 +813,29 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
     }
 
+
+    /**
+      * 没有权限拉取元数据的topic
+      */
     val unauthorizedTopicMetadata = unauthorizedTopics.map(topic =>
-      new MetadataResponse.TopicMetadata(Errors.TOPIC_AUTHORIZATION_FAILED, topic, common.Topic.isInternal(topic),
-        java.util.Collections.emptyList()))
+      new MetadataResponse.TopicMetadata(Errors.TOPIC_AUTHORIZATION_FAILED,
+                                         topic,
+                                         common.Topic.isInternal(topic),
+                                         java.util.Collections.emptyList())
+    )
 
     // In version 0, we returned an error when brokers with replicas were unavailable,
     // while in higher versions we simply don't include the broker in the returned broker list
     val errorUnavailableEndpoints = requestVersion == 0
+
     val topicMetadata =
       if (authorizedTopics.isEmpty)
         Seq.empty[MetadataResponse.TopicMetadata]
       else
+        /**
+          * *********************
+          * *********************
+          */
         getTopicMetadata(authorizedTopics, request.securityProtocol, errorUnavailableEndpoints)
 
     val completeTopicMetadata = topicMetadata ++ unauthorizedTopicMetadata
@@ -827,12 +847,14 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val responseHeader = new ResponseHeader(request.header.correlationId)
 
+    // 构造 Response
     val responseBody = new MetadataResponse(
-      brokers.map(_.getNode(request.securityProtocol)).asJava,
-      metadataCache.getControllerId.getOrElse(MetadataResponse.NO_CONTROLLER_ID),
-      completeTopicMetadata.asJava,
-      requestVersion
+                  brokers.map(_.getNode(request.securityProtocol)).asJava,
+                  metadataCache.getControllerId.getOrElse(MetadataResponse.NO_CONTROLLER_ID),
+                  completeTopicMetadata.asJava,
+                  requestVersion
     )
+
     requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
   }
 
@@ -912,6 +934,11 @@ class KafkaApis(val requestChannel: RequestChannel,
       val responseBody = new GroupCoordinatorResponse(Errors.GROUP_AUTHORIZATION_FAILED.code, Node.noNode)
       requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     } else {
+
+      /**
+        * 通过 hash(groupId) % (__consumer_offsets的分区数)
+        * 计算出这个group提交offset的分区号
+        */
       val partition = coordinator.partitionFor(groupCoordinatorRequest.groupId)
 
       // get metadata (and create the topic if necessary)
@@ -920,6 +947,10 @@ class KafkaApis(val requestChannel: RequestChannel,
       val responseBody = if (offsetsTopicMetadata.error != Errors.NONE) {
         new GroupCoordinatorResponse(Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code, Node.noNode)
       } else {
+
+        /**
+          * 找到对应partition的leader，这个leader就是 coordinator
+          */
         val coordinatorEndpoint = offsetsTopicMetadata.partitionMetadata().asScala
           .find(_.partition == partition)
           .map(_.leader())
@@ -934,6 +965,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
       trace("Sending consumer metadata %s for correlation id %d to client %s."
         .format(responseBody, request.header.correlationId, request.header.clientId))
+      // 返回
       requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     }
   }

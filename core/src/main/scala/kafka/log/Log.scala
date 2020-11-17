@@ -687,10 +687,10 @@ class Log(val dir: File,
       * 1
       * 2
       * 3
-      * 4
       */
-    if (segment.size > config.segmentSize - messagesSize || segment.size > 0 && time.milliseconds - segment.created > config.segmentMs - segment.rollJitterMs ||
-        segment.index.isFull) {
+    if (segment.size > config.segmentSize - messagesSize
+      || segment.size > 0 && time.milliseconds - segment.created > config.segmentMs - segment.rollJitterMs
+      || segment.index.isFull) {
 
         debug("Rolling new log segment in %s (log_size = %d/%d, index_size = %d/%d, age_ms = %d/%d)."
               .format(name,
@@ -701,10 +701,10 @@ class Log(val dir: File,
                       time.milliseconds - segment.created,
                       config.segmentMs - segment.rollJitterMs))
 
-      /**
-       * 滚动一个新的日志段
-       */
-      roll()
+        /**
+         * 滚动一个新的日志段
+         */
+        roll()
     } else {
 
           segment
