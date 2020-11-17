@@ -80,17 +80,19 @@ class KafkaApis(val requestChannel: RequestChannel,
          * 生产者发送的请求
          */
         case ApiKeys.PRODUCE => handleProducerRequest(request)
-
-
         /**
+          * 1）follower从leader抓取数据请求
           * fetch的逻辑  follower来拉取副本
           * 1、 先会尝试从本地磁盘文件读取指定offset之后的数据
           * 2、 如果能读取到，那么就直接返回给人家就可以了
           * 3、 是不是考虑更新一下 HW, ISR,这些东西是否需要维护
           * 4、 如果拉取不到任何数据，此时需要采用时间轮机制，延迟执行fetch
           * 5、 如果leader分区有新的数据写入，此时就可以唤醒时间轮中等待的fetch request来执行拉取数据
+          *
+          * 2）消费者从broker消费数据请求
           */
         case ApiKeys.FETCH => handleFetchRequest(request)
+
 
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
 
@@ -99,28 +101,57 @@ class KafkaApis(val requestChannel: RequestChannel,
           */
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
 
+        /**
+          * 处理topic的partition的leader和isr变更请求
+          */
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
 
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
+
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
+
+        /**
+          * 处理controller的shutdown请求
+          */
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
+
+        /**
+          * 提交 offset
+          */
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
+
+        /**
+          *
+          */
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
+
+        /**
+          *
+          */
         case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request)
 
-        // 加入 consumer group
+        /**
+          * 加入 consumer group
+          */
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
 
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
+
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
 
-        //
+        /**
+          * consumer leader 制定分区方案发送给 GroupCoordinator
+          */
         case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)
 
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
+
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
+
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
+
         case ApiKeys.API_VERSIONS => handleApiVersionsRequest(request)
+
         case requestId => throw new KafkaException("Unknown api code " + requestId)
       }
 
@@ -959,16 +990,21 @@ class KafkaApis(val requestChannel: RequestChannel,
       // let the coordinator to handle join-group
       val protocols = joinGroupRequest.groupProtocols().map(protocol =>
         (protocol.name, Utils.toArray(protocol.metadata))).toList
-      //
+
+      /**
+        * *************************************************************
+        * 调用 GroupCoordinator 的  handleJoinGroup方法，处理加入消费组的请求
+        * *************************************************************
+        */
       coordinator.handleJoinGroup(
-        joinGroupRequest.groupId,
-        joinGroupRequest.memberId,
-        request.header.clientId,
-        request.session.clientAddress.toString,
-        joinGroupRequest.sessionTimeout,
-        joinGroupRequest.protocolType,
-        protocols,
-        sendResponseCallback)
+            joinGroupRequest.groupId,
+            joinGroupRequest.memberId,
+            request.header.clientId,
+            request.session.clientAddress.toString,
+            joinGroupRequest.sessionTimeout,
+            joinGroupRequest.protocolType,
+            protocols,
+            sendResponseCallback)
     }
   }
 
@@ -977,9 +1013,18 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val syncGroupRequest = request.body.asInstanceOf[SyncGroupRequest]
 
+    /**
+      * 回调函数
+      * 这个回调函数非常重要，最终会赋值给 MemberMetadata#awaitingSyncCallback() 函数
+      * GroupCoordinator向每个consumer同步分区方案的回调函数
+      */
     def sendResponseCallback(memberState: Array[Byte], errorCode: Short) {
       val responseBody = new SyncGroupResponse(errorCode, ByteBuffer.wrap(memberState))
       val responseHeader = new ResponseHeader(request.header.correlationId)
+
+      /**
+        * 把分区方案打包返回
+        */
       requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     }
 
@@ -993,8 +1038,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                                   syncGroupRequest.generationId(),
                                   syncGroupRequest.memberId(),
                                   syncGroupRequest.groupAssignment().mapValues(Utils.toArray(_)),
-                                  sendResponseCallback
-      )
+                                  sendResponseCallback)
     }
   }
 

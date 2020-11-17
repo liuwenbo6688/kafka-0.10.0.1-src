@@ -40,6 +40,9 @@ public class SyncGroupRequest extends AbstractRequest {
     private final String groupId;
     private final int generationId;
     private final String memberId;
+    /**
+     *
+     */
     private final Map<String, ByteBuffer> groupAssignment;
 
     public SyncGroupRequest(String groupId,

@@ -125,7 +125,7 @@ private[coordinator] class GroupMetadata(val groupId: String, val protocolType: 
   private val members = new mutable.HashMap[String, MemberMetadata]
   private var state: GroupState = Stable
   var generationId = 0
-  var leaderId: String = null
+  var leaderId: String = null// 每个consumer group 也有一个leader consumer
   var protocol: String = null
 
   def is(groupState: GroupState) = state == groupState
@@ -170,6 +170,7 @@ private[coordinator] class GroupMetadata(val groupId: String, val protocolType: 
 
   // TODO: decide if ids should be predictable or random
   def generateMemberIdSuffix = UUID.randomUUID().toString
+
 
   def canRebalance = state == Stable || state == AwaitingSync
 

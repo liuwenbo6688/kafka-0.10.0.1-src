@@ -60,7 +60,13 @@ private[coordinator] class MemberMetadata(val memberId: String,
 
   var assignment: Array[Byte] = Array.empty[Byte]
   var awaitingJoinCallback: JoinGroupResult => Unit = null
+
+  /**
+    *  GroupCoordinator向每个consumer同步分区方案的回调函数
+    */
   var awaitingSyncCallback: (Array[Byte], Short) => Unit = null
+
+
   var latestHeartbeat: Long = -1
   var isLeaving: Boolean = false
 

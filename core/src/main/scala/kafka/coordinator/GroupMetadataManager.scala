@@ -59,7 +59,9 @@ class GroupMetadataManager(val brokerId: Int,
   /* offsets cache */
   private val offsetsCache = new Pool[GroupTopicPartition, OffsetAndMetadata]
 
-  /* group metadata cache */
+  /* group metadata cache
+  *  groupId -> GroupMetadata 的映射
+  * */
   private val groupsCache = new Pool[String, GroupMetadata]
 
   /* partitions of consumer groups that are being loaded, its lock should be always called BEFORE offsetExpireLock and the group lock if needed */
@@ -232,7 +234,8 @@ class GroupMetadataManager(val brokerId: Int,
     replicaManager.appendMessages(
       config.offsetCommitTimeoutMs.toLong,
       config.offsetCommitRequiredAcks,
-      true, // allow appending to internal offset topic
+      //
+      true, // allow appending to internal offset topic  向内部的topic写数据
       delayedAppend.messageSet,
       delayedAppend.callback)
   }
