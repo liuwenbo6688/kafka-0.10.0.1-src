@@ -532,7 +532,7 @@ class Log(val dir: File,
 
   /**
    * Read messages from the log.
-   *
+   * 从log读取数据
    * @param startOffset The offset to begin reading at
    * @param maxLength The maximum number of bytes to read
    * @param maxOffset The offset to read up to, exclusive. (i.e. this offset NOT included in the resulting message set)
@@ -579,7 +579,9 @@ class Log(val dir: File,
         }
       }
 
-      // 读取，从 LogSegment 中读取
+      /**
+        * 读取，从 LogSegment 中读取
+        */
       val fetchInfo = entry.getValue.read(startOffset, maxOffset, maxLength, maxPosition)
 
       if(fetchInfo == null) {

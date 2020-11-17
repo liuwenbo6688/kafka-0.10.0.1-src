@@ -21,5 +21,7 @@ package kafka.log
  * The mapping between a logical log offset and the physical position
  * in some log file of the beginning of the message set entry with the
  * given offset.
+  *
+  * 逻辑的offset对应文件的物理位置
  */
 case class OffsetPosition(offset: Long, position: Int)

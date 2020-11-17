@@ -157,7 +157,11 @@ class LogSegment(val log: FileMessageSet,
 
     val logSize = log.sizeInBytes // this may change, need to save a consistent copy
 
-    // 稀疏索引的二分查找
+
+    /**
+      * 稀疏索引的二分查找
+      * 返回offset
+      */
     val startPosition = translateOffset(startOffset)
 
     // if the start position is already off the end of the log, return null
@@ -182,6 +186,7 @@ class LogSegment(val log: FileMessageSet,
         // offset between new leader's high watermark and the log end offset, we want to return an empty response.
         if(offset < startOffset)
           return FetchDataInfo(offsetMetadata, MessageSet.Empty)
+
         val mapping = translateOffset(offset, startPosition.position)
         val endPosition =
           if(mapping == null)
@@ -193,8 +198,11 @@ class LogSegment(val log: FileMessageSet,
 
 
     FetchDataInfo(
-                offsetMetadata,
-                log.read(startPosition.position, length) // log.read 从某个物理位置读取
+          offsetMetadata,
+          /**
+            * log.read 从某个物理position 位置读取指定的长度 length
+            */
+          log.read(startPosition.position, length)
     )
   }
 

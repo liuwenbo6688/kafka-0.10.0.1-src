@@ -559,10 +559,10 @@ class KafkaApis(val requestChannel: RequestChannel,
       if (fetchRequest.isFromFollower) {
         fetchResponseCallback(0)
       } else {
-        quotaManagers(ApiKeys.FETCH.id).recordAndMaybeThrottle(fetchRequest.clientId,
-          FetchResponse.responseSize(mergedPartitionData.groupBy(_._1.topic),
-            fetchRequest.versionId),
-          fetchResponseCallback)
+        quotaManagers(ApiKeys.FETCH.id)
+          .recordAndMaybeThrottle(fetchRequest.clientId,
+                                  FetchResponse.responseSize(mergedPartitionData.groupBy(_._1.topic), fetchRequest.versionId),
+                                  fetchResponseCallback)
       }
     }
 

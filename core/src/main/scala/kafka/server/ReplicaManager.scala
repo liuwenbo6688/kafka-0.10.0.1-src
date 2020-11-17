@@ -551,38 +551,52 @@ class ReplicaManager(val config: KafkaConfig,
       */
     val logReadResults = readFromLocalLog(fetchOnlyFromLeader, fetchOnlyCommitted, fetchInfo)
 
+
     // if the fetch comes from the follower,
     // update its corresponding log end offset
     /**
-      * 更新leader中维护的follower的 LEO 和 HW
+      *  如果是follower同步数据， 还要更新leader中维护的follower的 LEO 和 HW
       */
     if(Request.isValidBrokerId(replicaId))
       updateFollowerLogReadResults(replicaId, logReadResults)
 
-    // check if this fetch request can be satisfied right away
-    // 读到字节数
+
+    /**
+      * check if this fetch request can be satisfied right away
+      * 统计一共读到的字节数，下面是否要立即返回的判断，需要使用这个变量
+      */
     val bytesReadable = logReadResults.values.map(_.info.messageSet.sizeInBytes).sum
 
-    val errorReadingData = logReadResults.values.foldLeft(false) ((errorIncurred, readResult) =>
+    val errorReadingData = logReadResults.values.foldLeft(false)((errorIncurred, readResult) =>
       errorIncurred || (readResult.errorCode != Errors.NONE.code))
 
-    // respond immediately if 1) fetch request does not want to wait
-    //                        2) fetch request does not require any data
-    //                        3) has enough data to respond
-    //                        4) some error happens while reading data
-    // 立即返回的条件：
-    // 1 fetch 请求不要求等待，也就是timeout <= 0
-    // 2 fetch 请求不要求获取任何数据 ，也就是  fetchInfo.size <= 0
-    // 3 已经达到了获取数据量的上限，也就是  bytesReadable >= fetchMinBytes
-    // 4 读取数据中间发生了错误，也就是 errorReadingData
-    if(timeout <= 0 || fetchInfo.size <= 0 || bytesReadable >= fetchMinBytes || errorReadingData) {
+
+    /**
+      * respond immediately if 1) fetch request does not want to wait
+      *                        2) fetch request does not require any data
+      *                        3) has enough data to respond
+      *                        4) some error happens while reading data
+      * 立即返回的条件：
+      * 1 fetch 请求不要求等待，也就是timeout <= 0
+      * 2 fetch 请求不要求获取任何数据 ，也就是  fetchInfo.size <= 0
+      * 3 已经达到了获取数据量的上限，也就是  bytesReadable >= fetchMinBytes
+      * 4 读取数据中间发生了错误，也就是 errorReadingData
+      */
+    if(timeout <= 0
+      || fetchInfo.size <= 0
+      || bytesReadable >= fetchMinBytes
+      || errorReadingData) {
+
       val fetchPartitionData = logReadResults.mapValues(result =>
         FetchResponsePartitionData(result.errorCode, result.hw, result.info.messageSet))
 
       // 如果可以立即返回的话，直接调用回调函数
       responseCallback(fetchPartitionData)
     } else {
-      // 没有读到数据，延迟调度
+
+      /**
+        * 没有读到数据，延迟调度?
+        */
       // construct the fetch results from the read results
       val fetchPartitionStatus = logReadResults.map { case (topicAndPartition, result) =>
         (topicAndPartition, FetchPartitionStatus(result.info.fetchOffsetMetadata, fetchInfo.get(topicAndPartition).get))
@@ -606,11 +620,19 @@ class ReplicaManager(val config: KafkaConfig,
    */
   def readFromLocalLog(fetchOnlyFromLeader: Boolean,
                        readOnlyCommitted: Boolean,
-                       readPartitionInfo: Map[TopicAndPartition, PartitionFetchInfo]): Map[TopicAndPartition, LogReadResult] = {
+                       readPartitionInfo: Map[TopicAndPartition, PartitionFetchInfo] // 从指定的分区和偏移开始消费数据
+                      ): Map[TopicAndPartition, LogReadResult] = {
 
     readPartitionInfo.map { case (TopicAndPartition(topic, partition), PartitionFetchInfo(offset, fetchSize)) =>
       BrokerTopicStats.getBrokerTopicStats(topic).totalFetchRequestRate.mark()
       BrokerTopicStats.getBrokerAllTopicsStats().totalFetchRequestRate.mark()
+
+      /**
+        * topic      拉取的topic
+        * partition  拉取topic的分区ID
+        * offset     拉取的起始偏移
+        * fetchSize  拉取数据大小
+        */
 
       val partitionDataAndOffsetInfo =
         try {
@@ -623,6 +645,11 @@ class ReplicaManager(val config: KafkaConfig,
           else
             getReplicaOrException(topic, partition)
 
+
+          /**
+            *  如果是仅拉取已提交的数据，那就只能取到HW对应的Offset为止 ;
+            *  否则，follower拉取数据是没有限制的
+            */
           // decide whether to only fetch committed data (i.e. messages below high watermark)
           val maxOffsetOpt = if (readOnlyCommitted)
             Some(localReplica.highWatermark.messageOffset)
@@ -639,14 +666,22 @@ class ReplicaManager(val config: KafkaConfig,
            */
           val initialLogEndOffset = localReplica.logEndOffset
 
-          // ******** 稀疏索引  二分查找
+          /**
+            * ********************************************************
+            * 根据offset偏移读取数据
+            * ********************************************************
+            */
           val logReadInfo = localReplica.log match {
             case Some(log) =>
+              /**
+                * 从offset开始读取fetchSize个字节的数据，最大读取到偏移为maxOffsetOpt为止
+                */
               log.read(offset, fetchSize, maxOffsetOpt)
             case None =>
               error("Leader for partition [%s,%d] does not have a local log".format(topic, partition))
               FetchDataInfo(LogOffsetMetadata.UnknownOffsetMetadata, MessageSet.Empty)
           }
+
 
           val readToEndOfLog = initialLogEndOffset.messageOffset - logReadInfo.fetchOffsetMetadata.messageOffset <= 0
 
@@ -986,7 +1021,9 @@ class ReplicaManager(val config: KafkaConfig,
       getPartition(topicAndPartition.topic, topicAndPartition.partition) match {
         case Some(partition) =>
 
-          // ***
+          /**
+            *
+            */
           partition.updateReplicaLogReadResult(replicaId, readResult)
 
           // for producer requests with ack > 1, we need to check
