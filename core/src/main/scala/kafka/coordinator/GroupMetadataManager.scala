@@ -56,10 +56,13 @@ class GroupMetadataManager(val brokerId: Int,
                            zkUtils: ZkUtils,
                            time: Time) extends Logging with KafkaMetricsGroup {
 
-  /* offsets cache */
+  /* offsets cache
+  *  缓存了group的消费进度
+  * */
   private val offsetsCache = new Pool[GroupTopicPartition, OffsetAndMetadata]
 
   /* group metadata cache
+  *  consumer group 元数据的缓存
   *  groupId -> GroupMetadata 的映射
   * */
   private val groupsCache = new Pool[String, GroupMetadata]
@@ -230,14 +233,17 @@ class GroupMetadataManager(val brokerId: Int,
   }
 
   def store(delayedAppend: DelayedStore) {
+
     // call replica manager to append the group message
     replicaManager.appendMessages(
-      config.offsetCommitTimeoutMs.toLong,
-      config.offsetCommitRequiredAcks,
-      //
-      true, // allow appending to internal offset topic  向内部的topic写数据
-      delayedAppend.messageSet,
-      delayedAppend.callback)
+                config.offsetCommitTimeoutMs.toLong,
+                config.offsetCommitRequiredAcks,
+                //
+                true, // allow appending to internal offset topic  向内部的topic写数据
+                delayedAppend.messageSet,
+                delayedAppend.callback
+    )
+
   }
 
   /**
@@ -269,7 +275,13 @@ class GroupMetadataManager(val brokerId: Int,
     val offsetsAndMetadataMessageSet = Map(offsetTopicPartition ->
       new ByteBufferMessageSet(config.offsetsTopicCompressionCodec, messages:_*))
 
-    // set the callback function to insert offsets into cache after log append completed
+    //===================================================================================================
+    /**
+      * set the callback function to insert offsets into cache after log append completed
+      * 翻译一下
+      * 回调函数，当消费偏移追加到log之后，再把数据写一份到缓存中
+      * @param responseStatus
+      */
     def putCacheCallback(responseStatus: Map[TopicPartition, PartitionResponse]) {
       // the append response should only contain the topics partition
       if (responseStatus.size != 1 || ! responseStatus.contains(offsetTopicPartition))
@@ -283,6 +295,11 @@ class GroupMetadataManager(val brokerId: Int,
       val responseCode =
         if (status.errorCode == Errors.NONE.code) {
           filteredOffsetMetadata.foreach { case (topicAndPartition, offsetAndMetadata) =>
+
+            /**
+              * 缓存一下消费group下的各分区的消费偏移
+              * 当读取消费进度的时候，就直接从缓存里读取
+              */
             putOffset(GroupTopicPartition(groupId, topicAndPartition), offsetAndMetadata)
           }
           Errors.NONE.code
@@ -311,10 +328,10 @@ class GroupMetadataManager(val brokerId: Int,
         else
           (topicAndPartition, Errors.OFFSET_METADATA_TOO_LARGE.code)
       }
-
       // finally trigger the callback logic passed from the API layer
       responseCallback(commitStatus)
     }
+    //===================================================================================================
 
     DelayedStore(offsetsAndMetadataMessageSet, putCacheCallback)
   }
@@ -334,7 +351,11 @@ class GroupMetadataManager(val brokerId: Int,
         }.toMap
       } else {
         topicPartitions.map { topicPartition =>
+
           val groupTopicPartition = GroupTopicPartition(group, topicPartition)
+          /**
+            * getOffset()
+            */
           (groupTopicPartition.topicPartition, getOffset(groupTopicPartition))
         }.toMap
       }

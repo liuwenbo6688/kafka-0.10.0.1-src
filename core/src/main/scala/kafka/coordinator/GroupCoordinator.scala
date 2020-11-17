@@ -432,6 +432,10 @@ class GroupCoordinator(val brokerId: Int,
     }
   }
 
+
+  /**
+    * 提交消费偏移量 offset
+    */
   def handleCommitOffsets(groupId: String,
                           memberId: String,
                           generationId: Int,
@@ -450,8 +454,9 @@ class GroupCoordinator(val brokerId: Int,
       if (group == null) {
         if (generationId < 0)
           // the group is not relying on Kafka for partition management, so allow the commit
-          delayedOffsetStore = Some(groupManager.prepareStoreOffsets(groupId, memberId, generationId, offsetMetadata,
-            responseCallback))
+          delayedOffsetStore = Some(
+            groupManager.prepareStoreOffsets(groupId, memberId, generationId, offsetMetadata, responseCallback)
+          )
         else
           // the group has failed over to this coordinator (which will be handled in KAFKA-2017),
           // or this is a request coming from an older generation. either way, reject the commit
@@ -469,14 +474,22 @@ class GroupCoordinator(val brokerId: Int,
           } else {
             val member = group.get(memberId)
             completeAndScheduleNextHeartbeatExpiration(group, member)
-            delayedOffsetStore = Some(groupManager.prepareStoreOffsets(groupId, memberId, generationId,
-              offsetMetadata, responseCallback))
+            delayedOffsetStore = Some(
+              /**
+                * DelayedStore
+                */
+              groupManager.prepareStoreOffsets(groupId, memberId, generationId, offsetMetadata, responseCallback)
+            )
           }
         }
       }
     }
 
     // store the offsets without holding the group lock
+    /**
+      * 调用 groupManager.store 方法，传入上面构建的 DelayedStore
+      * 提交的Offset写入磁盘，然后调用回调函数写到缓存
+      */
     delayedOffsetStore.foreach(groupManager.store)
   }
 
@@ -486,14 +499,18 @@ class GroupCoordinator(val brokerId: Int,
       partitions.map { case topicPartition =>
         (topicPartition, new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code))}.toMap
     } else if (!isCoordinatorForGroup(groupId)) {
+      // 当前broker必须是该groupId的Coordinator才行
       partitions.map { case topicPartition =>
         (topicPartition, new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.NOT_COORDINATOR_FOR_GROUP.code))}.toMap
     } else if (isCoordinatorLoadingInProgress(groupId)) {
       partitions.map { case topicPartition =>
         (topicPartition, new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.GROUP_LOAD_IN_PROGRESS.code))}.toMap
     } else {
-      // return offsets blindly regardless the current group state since the group may be using
-      // Kafka commit storage without automatic group management
+
+      /**
+        *  return offsets blindly regardless the current group state since the group may be using
+        *  Kafka commit storage without automatic group management
+        */
       groupManager.getOffsets(groupId, partitions)
     }
   }

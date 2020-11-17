@@ -135,6 +135,9 @@ class KafkaApis(val requestChannel: RequestChannel,
           */
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
 
+        /**
+          * 心跳请求
+          */
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
 
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
@@ -146,6 +149,9 @@ class KafkaApis(val requestChannel: RequestChannel,
 
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
 
+        /**
+          * 请求 consumer group 信息
+          */
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
 
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
@@ -838,6 +844,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     val offsetFetchRequest = request.body.asInstanceOf[OffsetFetchRequest]
 
     val responseHeader = new ResponseHeader(header.correlationId)
+
     val offsetFetchResponse =
     // reject the request if not authorized to the group
       if (!authorize(request.session, Read, new Resource(Group, offsetFetchRequest.groupId))) {
@@ -853,6 +860,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         val unknownTopicPartitionResponse = new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.UNKNOWN_TOPIC_OR_PARTITION.code)
 
         if (header.apiVersion == 0) {
+          // 早期版本0.8x，消费偏移是保存在zookeeper上的，这个分支可以不看了
           // version 0 reads offsets from ZK
           val responseInfo = authorizedTopicPartitions.map { topicPartition =>
             val topicDirs = new ZKGroupTopicDirs(offsetFetchRequest.groupId, topicPartition.topic)
@@ -876,7 +884,11 @@ class KafkaApis(val requestChannel: RequestChannel,
           }.toMap
           new OffsetFetchResponse((responseInfo ++ unauthorizedStatus).asJava)
         } else {
-          // version 1 reads offsets from Kafka;
+
+          /**
+            * version 1 reads offsets from Kafka;
+            * 0.9之后，直接从kafka读取group的消费进度
+            */
           val offsets = coordinator.handleFetchOffsets(offsetFetchRequest.groupId, authorizedTopicPartitions).toMap
 
           // Note that we do not need to filter the partitions in the
@@ -886,7 +898,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
       }
 
+
     trace(s"Sending offset fetch response $offsetFetchResponse for correlation id ${header.correlationId} to client ${header.clientId}.")
+    // 返回
     requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, responseHeader, offsetFetchResponse)))
   }
 
@@ -953,6 +967,9 @@ class KafkaApis(val requestChannel: RequestChannel,
     val responseBody = if (!authorize(request.session, Describe, Resource.ClusterResource)) {
       ListGroupsResponse.fromError(Errors.CLUSTER_AUTHORIZATION_FAILED)
     } else {
+      /**
+        * 从 GroupCoordinator 中组织所有消费组
+        */
       val (error, groups) = coordinator.handleListGroups()
       val allGroups = groups.map { group => new ListGroupsResponse.Group(group.groupId, group.protocolType) }
       new ListGroupsResponse(error.code, allGroups.asJava)

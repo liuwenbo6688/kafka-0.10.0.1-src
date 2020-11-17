@@ -42,7 +42,13 @@ public class OffsetFetchRequest extends AbstractRequest {
     // partition level field names
     private static final String PARTITION_KEY_NAME = "partition";
 
+    /**
+     * 所属 groupId
+     */
     private final String groupId;
+    /**
+     * 具体哪些 分区的消费进度
+     */
     private final List<TopicPartition> partitions;
 
     public OffsetFetchRequest(String groupId, List<TopicPartition> partitions) {

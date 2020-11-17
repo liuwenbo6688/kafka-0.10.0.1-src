@@ -98,11 +98,14 @@ class Log(val dir: File,
 
   /* the actual segments of the log */
   /**
-    * ConcurrentNavigableMap  带导航的map，学习下kafka的用法，真的很巧妙
-    * key：起始的offset ， value： 日志段
+    * ****************************************************************
+    * ConcurrentNavigableMap  带导航的map，可以根据key快速定位value
+    * 学习下kafka的用法，真的很巧妙
+    *
+    * < key:起始的offset , value: 日志段>
+    * ****************************************************************
     */
-  private val segments: ConcurrentNavigableMap[java.lang.Long, LogSegment] =
-                                      new ConcurrentSkipListMap[java.lang.Long, LogSegment]
+  private val segments: ConcurrentNavigableMap[java.lang.Long, LogSegment] = new ConcurrentSkipListMap[java.lang.Long, LogSegment]
 
   loadSegments()
 
@@ -338,21 +341,20 @@ class Log(val dir: File,
     if (appendInfo.shallowCount == 0)
       return appendInfo
 
-    // trim any invalid bytes or partial messages before appending it to the on-disk log
     /**
-     * 保留有效数据
+      * trim any invalid bytes or partial messages before appending it to the on-disk log
+     *  保留有效数据
      */
     var validMessages = trimInvalidBytes(messages, appendInfo)
 
     try {
       // they are valid, insert them in the log
-      // 对于一个分区目录而言，在写入数据的时候都是并发控制的
+      // 对于一个分区目录而言，在写入数据的时候都是并发控制的，必须加独占锁
       lock synchronized {
 
         if (assignOffsets) {
           /**
-           * assignOffsets = true : 这个分支，是producer发送的数据，需要broker端分配offset
-           *
+           * assignOffsets = true : 也就是进入这个if分支，是producer发送的数据，需要broker端分配offset
            * assignOffsets = false,代表从leader同步数据，这样offset都是已经存在的了，不需要再分配
            */
           // assign offsets to the message set
@@ -457,7 +459,7 @@ class Log(val dir: File,
     var validBytesCount = 0
     var firstOffset, lastOffset = -1L
     var sourceCodec: CompressionCodec = NoCompressionCodec
-    var monotonic = true
+    var monotonic = true  // 是否单调递增
 
     /**
      * shallowIterator返回没有解压缩的数据的迭代器
@@ -517,6 +519,9 @@ class Log(val dir: File,
    * @return A trimmed message set. This may be the same as what was passed in or it may not.
    */
   private def trimInvalidBytes(messages: ByteBufferMessageSet, info: LogAppendInfo): ByteBufferMessageSet = {
+    /**
+      * 截取有效大小之前的数据，放弃无效数据
+      */
     val messageSetValidBytes = info.validBytes
     if(messageSetValidBytes < 0)
       throw new CorruptRecordException("Illegal length of message set " + messageSetValidBytes + " Message set cannot be appended to log. Possible causes are corrupted produce requests")
@@ -654,6 +659,9 @@ class Log(val dir: File,
   /**
    *  The offset of the next message that will be appended to the log
     * 获取LEO
+    *
+    * LEO=0,写入一条数据，此时LEO=1,但是写入的第一条数据的offset=0
+    * LEO永远大于最后一条数据的offset
    */
   def logEndOffset: Long = nextOffsetMetadata.messageOffset
 
@@ -670,13 +678,18 @@ class Log(val dir: File,
    * @return The currently active segment after (perhaps) rolling to a new segment
    */
   private def maybeRoll(messagesSize: Int): LogSegment = {
+
+    // 获取当前正在写入的日志段
     val segment = activeSegment
 
     /**
-      *
+      * 需要滚动日志文件的判断
+      * 1
+      * 2
+      * 3
+      * 4
       */
-    if (segment.size > config.segmentSize - messagesSize ||
-        segment.size > 0 && time.milliseconds - segment.created > config.segmentMs - segment.rollJitterMs ||
+    if (segment.size > config.segmentSize - messagesSize || segment.size > 0 && time.milliseconds - segment.created > config.segmentMs - segment.rollJitterMs ||
         segment.index.isFull) {
 
         debug("Rolling new log segment in %s (log_size = %d/%d, index_size = %d/%d, age_ms = %d/%d)."
@@ -706,8 +719,8 @@ class Log(val dir: File,
   def roll(): LogSegment = {
     val start = time.nanoseconds
     lock synchronized {
-      // LEO=0,写入一条数据，此时LEO=1,但是写入的第一条数据的offset=0
-      // LEO永远大于最后一条数据的offset
+
+      // 获取 LEO
       val newOffset = logEndOffset
 
       /**
@@ -866,8 +879,8 @@ class Log(val dir: File,
 
   /**
    * The active segment that is currently taking appends
-    * 当前有效的 segment
-    * 就是当前正在写入的 segment
+    * 当前有效的 segment，就是当前正在写入的 segment
+    * lastEntry(),获取最大key对应的值，也就是最大offset对应的日志段
    */
   def activeSegment = segments.lastEntry.getValue
 

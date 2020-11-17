@@ -413,6 +413,7 @@ class ReplicaManager(val config: KafkaConfig,
     } else {
       // If required.acks is outside accepted range, something is wrong with the client
       // Just return an error and don't handle the request at all
+      // acks不是合法值，直接返回错误信息
       val responseStatus = messagesPerPartition.map {
         case (topicAndPartition, messageSet) =>
           (topicAndPartition -> new PartitionResponse(Errors.INVALID_REQUIRED_ACKS.code,
@@ -446,6 +447,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   /**
    * Append the messages to the local replica logs
+    * 追加消息数据到本地日志文件
    */
   private def appendToLocalLog(internalTopicsAllowed: Boolean,
                                messagesPerPartition: Map[TopicPartition, MessageSet],
@@ -470,6 +472,7 @@ class ReplicaManager(val config: KafkaConfig,
         // 正常情况，走这里，非内部topic的情况
         try {
           val partitionOpt = getPartition(topicPartition.topic, topicPartition.partition)
+
           val info = partitionOpt match {
             case Some(partition) =>
 
@@ -497,8 +500,10 @@ class ReplicaManager(val config: KafkaConfig,
 
           trace("%d bytes written to log %s-%d beginning at offset %d and ending at offset %d"
             .format(messages.sizeInBytes, topicPartition.topic, topicPartition.partition, info.firstOffset, info.lastOffset))
+
           // 返回每个分区写入的结果 LogAppendResult
           (topicPartition, LogAppendResult(info))
+
         } catch {
           // 异常的捕获
           // NOTE: Failed produce requests metric is not incremented for known exceptions

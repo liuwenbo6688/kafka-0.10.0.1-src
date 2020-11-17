@@ -56,19 +56,20 @@ class LogSegment(val log: FileMessageSet,
   def this(dir: File, startOffset: Long, indexIntervalBytes: Int, maxIndexSize: Int, rollJitterMs: Long, time: Time, fileAlreadyExists: Boolean = false, initFileSize: Int = 0, preallocate: Boolean = false) =
 
     this(
-
-      // FileMessageSet ，里面会初始化一个 filechannel
-      new FileMessageSet(
-        file = Log.logFilename(dir, startOffset), // log 的File对象
-        fileAlreadyExists = fileAlreadyExists,
-        initFileSize = initFileSize,
-        preallocate = preallocate),
-
-      new OffsetIndex(Log.indexFilename(dir, startOffset), baseOffset = startOffset, maxIndexSize = maxIndexSize),
-      startOffset,
-      indexIntervalBytes,
-      rollJitterMs,
-      time)
+        // FileMessageSet ，里面会初始化一个 file channel
+        new FileMessageSet(file = Log.logFilename(dir, startOffset), // log 的File对象
+                           fileAlreadyExists = fileAlreadyExists,
+                           initFileSize = initFileSize,
+                           preallocate = preallocate),
+        // OffsetIndex
+        new OffsetIndex(Log.indexFilename(dir, startOffset),
+                        baseOffset = startOffset,
+                        maxIndexSize = maxIndexSize),
+        startOffset, // 起始offset
+        indexIntervalBytes,
+        rollJitterMs,
+        time
+    )
 
   /* Return the size in bytes of this log segment */
   def size: Long = log.sizeInBytes()

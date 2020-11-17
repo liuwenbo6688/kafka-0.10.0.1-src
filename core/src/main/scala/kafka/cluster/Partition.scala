@@ -38,6 +38,9 @@ import org.apache.kafka.common.requests.PartitionState
 
 /**
  * Data structure that represents a topic partition. The leader maintains the AR, ISR, CUR, RAR
+  *
+  * 代表了一个topic的分区
+  * 维护了很多变量
  */
 class Partition(val topic: String,
                 val partitionId: Int,
@@ -50,8 +53,10 @@ class Partition(val topic: String,
   private val logManager = replicaManager.logManager
   private val zkUtils = replicaManager.zkUtils
 
-  // 维护了所有副本对应的 Replica
-  // brokerId -> Replica
+  /**
+    * 维护了所有副本对应的 Replica
+    * brokerId -> Replica
+    */
   private val assignedReplicaMap = new Pool[Int, Replica]
 
   // The read lock is only required when multiple reads are executed and needs to be in a consistent manner
@@ -136,7 +141,7 @@ class Partition(val topic: String,
   def leaderReplicaIfLocal(): Option[Replica] = {
     leaderReplicaIdOpt match {
       case Some(leaderReplicaId) =>
-        if (leaderReplicaId == localBrokerId)
+        if (leaderReplicaId == localBrokerId)// leader的brokerId 和 当前节点的brokerId相同，
           getReplica(localBrokerId)
         else
           None
@@ -500,14 +505,15 @@ class Partition(val topic: String,
   def appendMessagesToLeader(messages: ByteBufferMessageSet, requiredAcks: Int = 0) = {
     val (info, leaderHWIncremented) = inReadLock(leaderIsrUpdateLock) {
       val leaderReplicaOpt = leaderReplicaIfLocal()
+
       leaderReplicaOpt match {
         case Some(leaderReplica) =>
           /**
             * 分区的leader就是当前节点
             */
           val log = leaderReplica.log.get
-          val minIsr = log.config.minInSyncReplicas
-          val inSyncSize = inSyncReplicas.size
+          val minIsr = log.config.minInSyncReplicas // min.insync.replicas
+          val inSyncSize = inSyncReplicas.size      // 当前分区ISR包含的副本数量
 
           // Avoid writing to leader if there are not enough insync replicas to make it safe
           if (inSyncSize < minIsr && requiredAcks == -1) {
