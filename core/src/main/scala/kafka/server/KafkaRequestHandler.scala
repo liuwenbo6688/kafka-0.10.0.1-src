@@ -41,6 +41,11 @@ class KafkaRequestHandler(id: Int,
     while (true) {
       try {
         var req: RequestChannel.Request = null
+
+
+        /**
+          * 1. 不断地从requestChannel 拿到接收的请求 Request
+          * */
         while (req == null) {
           // We use a single meter for aggregate idle percentage for the thread pool.
           // Since meter is calculated as total_recorded_value / time_window and
@@ -48,16 +53,13 @@ class KafkaRequestHandler(id: Int,
           // time should be discounted by # threads.
           val startSelectTime = SystemTime.nanoseconds
 
-
-          /**
-            * 1. 不断地从requestChannel 拿到接收的请求 Request
-           * */
+          // 拉取请求
           req = requestChannel.receiveRequest(300)
-
 
           val idleTime = SystemTime.nanoseconds - startSelectTime
           aggregateIdleMeter.mark(idleTime / totalHandlerThreads)
         }
+
 
         if (req eq RequestChannel.AllDone) {
           debug("Kafka request handler %d on broker %d received shut down command".format(
@@ -84,6 +86,10 @@ class KafkaRequestHandler(id: Int,
   def shutdown(): Unit = requestChannel.sendRequest(RequestChannel.AllDone)
 }
 
+
+
+
+//------------------------------------------KafkaRequestHandlerPool start-----------------------------------------------------------------------------------
 class KafkaRequestHandlerPool(val brokerId: Int,
                               val requestChannel: RequestChannel,
                               val apis: KafkaApis,
@@ -117,6 +123,10 @@ class KafkaRequestHandlerPool(val brokerId: Int,
     info("shut down completely")
   }
 }
+//------------------------------------------KafkaRequestHandlerPool end-----------------------------------------------------------------------------------
+
+
+
 
 class BrokerTopicMetrics(name: Option[String]) extends KafkaMetricsGroup {
   val tags: scala.collection.Map[String, String] = name match {

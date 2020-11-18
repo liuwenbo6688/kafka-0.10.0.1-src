@@ -84,7 +84,13 @@ public class Fetcher<K, V> {
     private final Metadata metadata;
     private final FetchManagerMetrics sensors;
     private final SubscriptionState subscriptions;
+
+    /**
+     * 暂存消费到的数据
+     */
     private final List<CompletedFetch> completedFetches;
+
+
     private final Deserializer<K> keyDeserializer;
     private final Deserializer<V> valueDeserializer;
 
@@ -125,33 +131,49 @@ public class Fetcher<K, V> {
      * an in-flight fetch or pending fetch data.
      */
     public void sendFetches() {
+
+        /**
+         *
+         */
         for (Map.Entry<Node, FetchRequest> fetchEntry: createFetchRequests().entrySet()) {
+
             final FetchRequest request = fetchEntry.getValue();
             client.send(fetchEntry.getKey(), ApiKeys.FETCH, request)
-                    .addListener(new RequestFutureListener<ClientResponse>() {
-                        @Override
-                        public void onSuccess(ClientResponse resp) {
-                            FetchResponse response = new FetchResponse(resp.responseBody());
-                            Set<TopicPartition> partitions = new HashSet<>(response.responseData().keySet());
-                            FetchResponseMetricAggregator metricAggregator = new FetchResponseMetricAggregator(sensors, partitions);
+                    .addListener(
+                            /**
+                             * 发送完请求的回调函数，异步被调用
+                             */
+                            new RequestFutureListener<ClientResponse>() {
+                                @Override
+                                public void onSuccess(ClientResponse resp) {
+                                    FetchResponse response = new FetchResponse(resp.responseBody());
+                                    Set<TopicPartition> partitions = new HashSet<>(response.responseData().keySet());
+                                    FetchResponseMetricAggregator metricAggregator = new FetchResponseMetricAggregator(sensors, partitions);
 
-                            for (Map.Entry<TopicPartition, FetchResponse.PartitionData> entry : response.responseData().entrySet()) {
-                                TopicPartition partition = entry.getKey();
-                                long fetchOffset = request.fetchData().get(partition).offset;
-                                FetchResponse.PartitionData fetchData = entry.getValue();
-                                completedFetches.add(new CompletedFetch(partition, fetchOffset, fetchData, metricAggregator));
+
+                                    for (Map.Entry<TopicPartition, FetchResponse.PartitionData> entry : response.responseData().entrySet()) {
+                                        TopicPartition partition = entry.getKey();
+                                        long fetchOffset = request.fetchData().get(partition).offset;
+                                        FetchResponse.PartitionData fetchData = entry.getValue();
+
+                                        /**
+                                         * 消费到的数据，放到completedFetches队列暂存
+                                         */
+                                        completedFetches.add(new CompletedFetch(partition, fetchOffset, fetchData, metricAggregator));
+                                    }
+
+                                    sensors.fetchLatency.record(resp.requestLatencyMs());
+                                    sensors.fetchThrottleTimeSensor.record(response.getThrottleTime());
+                                }
+
+                                @Override
+                                public void onFailure(RuntimeException e) {
+                                    log.debug("Fetch failed", e);
+                                }
                             }
-
-                            sensors.fetchLatency.record(resp.requestLatencyMs());
-                            sensors.fetchThrottleTimeSensor.record(response.getThrottleTime());
-                        }
-
-                        @Override
-                        public void onFailure(RuntimeException e) {
-                            log.debug("Fetch failed", e);
-                        }
-                    });
+                    );
         }
+
     }
 
     /**

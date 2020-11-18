@@ -300,6 +300,7 @@ public class Selector implements Selectable {
      */
     @Override
     public void wakeup() {
+        // 唤醒 nioSelector.select(), 立即返回
         this.nioSelector.wakeup();
     }
 
@@ -388,6 +389,7 @@ public class Selector implements Selectable {
              * 获取到一堆的 SelectionKey 进行处理
              */
             pollSelectionKeys(this.nioSelector.selectedKeys(), false);
+
             /**
              * 立即就连接上的SelectionKey,也可以进行处理了
              */
@@ -446,7 +448,7 @@ public class Selector implements Selectable {
                  */
                 /* if channel is ready read from any connections that have readable data */
                 if (channel.ready() && key.isReadable()
-                        && !hasStagedReceive(channel)/*没有积压的Staged消息*/) {
+                        && !hasStagedReceive(channel) /*没有积压的Staged消息*/ ) {
                     NetworkReceive networkReceive;
 
                     // 针对一个broker的连接反复的读，粘包和拆包问题的解决方式是大亮点

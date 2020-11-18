@@ -66,7 +66,9 @@ public class SubscriptionState {
     /* the list of partitions the user has requested */
     private final Set<TopicPartition> userAssignment;
 
-    /* the list of partitions currently assigned */
+    /* the list of partitions currently assigned
+    *  当前被分配的消费分区
+    * */
     private final Map<TopicPartition, TopicPartitionState> assignment;
 
     /* do we need to request a partition assignment from the coordinator? */
@@ -181,9 +183,15 @@ public class SubscriptionState {
         for (TopicPartition tp : assignments)
             if (!this.subscription.contains(tp.topic()))
                 throw new IllegalArgumentException("Assigned partition " + tp + " for non-subscribed topic.");
+
         this.assignment.clear();
+
+        /**
+         *  缓存分发下来的分区消费方案
+         */
         for (TopicPartition tp: assignments)
             addAssignedPartition(tp);
+
         this.needsPartitionAssignment = false;
     }
 
@@ -379,8 +387,18 @@ public class SubscriptionState {
     }
 
     private static class TopicPartitionState {
-        private Long position; // last consumed position
-        private OffsetAndMetadata committed;  // last committed position
+        /**
+         * last consumed position
+         * 最新消费的offset
+         */
+        private Long position;
+
+        /**
+         * last committed position
+         * 上一次提交的offset
+         */
+        private OffsetAndMetadata committed;
+
         private boolean paused;  // whether this partition has been paused by the user
         private OffsetResetStrategy resetStrategy;  // the strategy to use if the offset needs resetting
 

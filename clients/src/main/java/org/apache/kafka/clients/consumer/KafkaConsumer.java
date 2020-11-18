@@ -566,6 +566,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * {@link ConsumerConfig}
      */
     public KafkaConsumer(Properties properties) {
+        /**
+         * 根据Properties, 初始化KafkaConsumer
+         */
         this(properties, null, null);
     }
 
@@ -595,17 +598,35 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                           Deserializer<V> valueDeserializer) {
         try {
             log.debug("Starting the Kafka consumer");
+
+            /**
+             * request.timeout.ms
+             */
             this.requestTimeoutMs = config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG);
+
+            /**
+             * session.timeout.ms
+             */
             int sessionTimeOutMs = config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG);
+
+            /**
+             * fetch.max.wait.ms
+             */
             int fetchMaxWaitMs = config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG);
             if (this.requestTimeoutMs <= sessionTimeOutMs || this.requestTimeoutMs <= fetchMaxWaitMs)
                 throw new ConfigException(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG + " should be greater than " + ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG + " and " + ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG);
+
             this.time = new SystemTime();
 
+            /**
+             * 构造 clientId
+             */
             String clientId = config.getString(ConsumerConfig.CLIENT_ID_CONFIG);
             if (clientId.length() <= 0)
                 clientId = "consumer-" + CONSUMER_CLIENT_ID_SEQUENCE.getAndIncrement();
             this.clientId = clientId;
+
+
             Map<String, String> metricsTags = new LinkedHashMap<>();
             metricsTags.put("client-id", clientId);
             MetricConfig metricConfig = new MetricConfig().samples(config.getInt(ConsumerConfig.METRICS_NUM_SAMPLES_CONFIG))
@@ -615,12 +636,19 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     MetricsReporter.class);
             reporters.add(new JmxReporter(JMX_PREFIX));
             this.metrics = new Metrics(metricConfig, reporters, time);
-            // retry.backoff.ms
+
+            /**
+             * retry.backoff.ms
+             * 重试间隔时间
+             */
             this.retryBackoffMs = config.getLong(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG);
+
             this.metadata = new Metadata(retryBackoffMs, config.getLong(ConsumerConfig.METADATA_MAX_AGE_CONFIG));
             List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(config.getList(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
             this.metadata.update(Cluster.bootstrap(addresses), 0);
             String metricGrpPrefix = "consumer";
+
+
             ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config.values());
             NetworkClient netClient = new NetworkClient(
                     new Selector(config.getLong(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG), metrics, time, metricGrpPrefix, channelBuilder),
@@ -633,6 +661,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG), time);
             this.client = new ConsumerNetworkClient(netClient, metadata, time, retryBackoffMs,
                     config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG));
+
+
             OffsetResetStrategy offsetResetStrategy = OffsetResetStrategy.valueOf(config.getString(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG).toUpperCase(Locale.ROOT));
             this.subscriptions = new SubscriptionState(offsetResetStrategy);
             List<PartitionAssignor> assignors = config.getConfiguredInstances(
@@ -650,9 +680,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
              * Consumer 的 Coordinator
              */
             this.coordinator = new ConsumerCoordinator(this.client,
-                                        config.getString(ConsumerConfig.GROUP_ID_CONFIG),
-                                        config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
-                                        config.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG),
+                                        config.getString(ConsumerConfig.GROUP_ID_CONFIG),           // group.id
+                                        config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),    // session.timeout.ms
+                                        config.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG), // heartbeat.interval.ms
                                         assignors,
                                         this.metadata,
                                         this.subscriptions,
@@ -685,7 +715,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             }
 
 
-            // consumer端拉取数据的组件
+            // consumer 端拉取数据的组件
             this.fetcher = new Fetcher<>(this.client,
                     config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG),
                     config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG),
@@ -991,7 +1021,6 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
         // ensure we have partitions assigned if we expect to
         if (subscriptions.partitionsAutoAssigned())
-            //
             coordinator.ensurePartitionAssignment();
 
         // fetch positions if we have partitions we're subscribed to that we
@@ -1002,9 +1031,11 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         long now = time.milliseconds();
 
         // execute delayed tasks (e.g. autocommits and heartbeats) prior to fetching records
+        // 执行heartbeat任务或者自动提交offset任务
         client.executeDelayedTasks(now);
 
         // init any new fetches (won't resend pending fetches)
+        // 直接获取已经收到的数据
         Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
 
         // if data is available already, e.g. from a previous network client poll() call to commit,
@@ -1012,6 +1043,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         if (!records.isEmpty())
             return records;
 
+        // 如果没有接收到任何一条消息，则真正地发送fetch请求
         fetcher.sendFetches();
         client.poll(timeout, now);
         return fetcher.fetchedRecords();

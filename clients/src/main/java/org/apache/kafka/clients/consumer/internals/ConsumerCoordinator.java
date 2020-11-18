@@ -221,7 +221,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         // set the flag to refresh last committed offsets
         subscriptions.needRefreshCommits();
 
-        // update partition assignment
+        /**
+         *  update partition assignment
+         *  保存分区消费方案
+         */
         subscriptions.assignFromSubscribed(assignment.partitions());
 
         // give the assignor a chance to update internal state based on the received assignment

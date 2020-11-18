@@ -48,7 +48,13 @@ public class ConsumerNetworkClient implements Closeable {
     private final KafkaClient client;
     private final AtomicBoolean wakeup = new AtomicBoolean(false);
     private final DelayedTaskQueue delayedTasks = new DelayedTaskQueue();
+
+    /**
+     * 未发送队列
+     */
     private final Map<Node, List<ClientRequest>> unsent = new HashMap<>();
+
+
     private final Metadata metadata;
     private final Time time;
     private final long retryBackoffMs;
@@ -108,7 +114,12 @@ public class ConsumerNetworkClient implements Closeable {
         RequestFutureCompletionHandler future = new RequestFutureCompletionHandler();
         RequestHeader header = client.nextRequestHeader(api);
         RequestSend send = new RequestSend(node.idString(), header, request.toStruct());
+
+        /**
+         * 添加到待发送队列
+         */
         put(node, new ClientRequest(now, true, send, future));
+
         return future;
     }
 

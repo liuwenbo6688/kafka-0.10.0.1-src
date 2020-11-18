@@ -45,7 +45,13 @@ object RequestChannel extends Logging {
 
   case class Session(principal: KafkaPrincipal, clientAddress: InetAddress)
 
-  case class Request(processor: Int, connectionId: String, session: Session, private var buffer: ByteBuffer, startTimeMs: Long, securityProtocol: SecurityProtocol) {
+  case class Request(processor: Int,
+                     connectionId: String,
+                     session: Session,
+                     private var buffer: ByteBuffer,
+                     startTimeMs: Long,
+                     securityProtocol: SecurityProtocol) {
+
     // These need to be volatile because the readers are in the network thread and the writers are in the request
     // handler threads or the purgatory threads
     @volatile var requestDequeueTimeMs = -1L
@@ -238,8 +244,12 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requ
   }
 
   /** Get the next request or block until specified time has elapsed */
+  /**
+    * 有阻塞超时时间的poll
+    */
   def receiveRequest(timeout: Long): RequestChannel.Request =
     requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
+
 
   /** Get the next request or block until there is one */
   def receiveRequest(): RequestChannel.Request =

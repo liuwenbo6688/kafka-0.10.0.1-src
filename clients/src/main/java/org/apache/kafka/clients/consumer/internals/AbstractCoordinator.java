@@ -93,7 +93,12 @@ public abstract class AbstractCoordinator implements Closeable {
 
     private boolean needsJoinPrepare = true;
     private boolean rejoinNeeded = true;
+
+    /**
+     * group 的coordinator节点
+     */
     protected Node coordinator;
+
     protected String memberId;
     protected String protocol;
     protected int generation;
@@ -179,8 +184,12 @@ public abstract class AbstractCoordinator implements Closeable {
      * Block until the coordinator for this group is known and is ready to receive requests.
      */
     public void ensureCoordinatorReady() {
+
         while (coordinatorUnknown()) {
-            //
+            /**
+             * 走到这里代表 coordinator 还位置，需要先去找broker询问自己的coordinator是谁
+             * 就是发送 GROUP_COORDINATOR 请求
+             */
             RequestFuture<Void> future = sendGroupCoordinatorRequest();
             client.poll(future);
 
@@ -231,15 +240,17 @@ public abstract class AbstractCoordinator implements Closeable {
                 continue;
             }
 
-            // join group ，向group coordinator 发送加入group的请求
+            // JoinGroup ，向group coordinator 发送加入group的请求
             RequestFuture<ByteBuffer> future = sendJoinGroupRequest();
 
             future.addListener(new RequestFutureListener<ByteBuffer>() {
                 @Override
                 public void onSuccess(ByteBuffer value) {
-                    // handle join completion in the callback so that the callback will be invoked
-                    // even if the consumer is woken up before finishing the rebalance
-                    // join group结束后的回调方法
+                    /**
+                     * handle join completion in the callback so that the callback will be invoked
+                     * even if the consumer is woken up before finishing the rebalance
+                     * JoinGroup 结束后的回调方法
+                     */
                     onJoinComplete(generation, memberId, protocol, value);
 
                     needsJoinPrepare = true;
@@ -377,11 +388,13 @@ public abstract class AbstractCoordinator implements Closeable {
                 AbstractCoordinator.this.protocol = joinResponse.groupProtocol();
                 sensors.joinLatency.record(response.requestLatencyMs());
 
-                /**
-                 *
-                 */
+
                 if (joinResponse.isLeader()) {
-                    //
+                    /**
+                     * *************************************************************************************
+                     * 如果自己被选为 leader consumer，需要定制分区方案，然后发送SyncGroup请求给 coordinator broker
+                     * *************************************************************************************
+                     */
                     onJoinLeader(joinResponse).chain(future);
                 } else {
                     onJoinFollower().chain(future);
@@ -428,8 +441,12 @@ public abstract class AbstractCoordinator implements Closeable {
 
     private RequestFuture<ByteBuffer> onJoinLeader(JoinGroupResponse joinResponse) {
         try {
+
             // perform the leader synchronization and send back the assignment for the group
-            Map<String, ByteBuffer> groupAssignment = performAssignment(joinResponse.leaderId(), joinResponse.groupProtocol(),
+            // 定制分区消费方案
+            Map<String, ByteBuffer> groupAssignment = performAssignment(
+                    joinResponse.leaderId(),
+                    joinResponse.groupProtocol(),
                     joinResponse.members());
 
             // 发送 SyncGroup的请求，把分区分配方案告诉group coordinator
