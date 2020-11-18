@@ -48,7 +48,10 @@ import java.util.regex.Pattern;
 public class SubscriptionState {
 
     private enum SubscriptionType {
-        NONE, AUTO_TOPICS, AUTO_PATTERN, USER_ASSIGNED
+        NONE,           // 初始值
+        AUTO_TOPICS,    // 按照指定Topic名字进行订阅，自动分配分区
+        AUTO_PATTERN,   // 按照指定的正则表达式匹配Topic，自动分配分区
+        USER_ASSIGNED   // 手动指定消费者消费的Topic以及分区编号
     };
 
     /* the type of subscription */
@@ -297,8 +300,14 @@ public class SubscriptionState {
         return fetchable;
     }
 
+    /**
+     * 自动分配分区的判断逻辑
+     * AUTO_TOPICS（ 按照指定Topic名字进行订阅） 和 AUTO_PATTERN（指定的正则表达式匹配Topic）
+     * @return
+     */
     public boolean partitionsAutoAssigned() {
-        return this.subscriptionType == SubscriptionType.AUTO_TOPICS || this.subscriptionType == SubscriptionType.AUTO_PATTERN;
+        return this.subscriptionType == SubscriptionType.AUTO_TOPICS
+                || this.subscriptionType == SubscriptionType.AUTO_PATTERN;
     }
 
     public void position(TopicPartition tp, long offset) {

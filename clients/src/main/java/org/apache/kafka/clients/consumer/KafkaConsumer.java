@@ -990,6 +990,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     // NOTE: since the consumed position has already been updated, we must not allow
                     // wakeups or any other errors to be triggered prior to returning the fetched records.
                     // Additionally, pollNoWakeup does not allow automatic commits to get triggered.
+                    /**
+                     * 消费到数据的情况下，在返回数据之前，先开启下一轮的拉取数据
+                     */
                     fetcher.sendFetches();
                     client.pollNoWakeup();
 
@@ -1016,26 +1019,46 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * @return The fetched records (may be empty)
      */
     private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollOnce(long timeout) {
-        // TODO: Sub-requests should take into account the poll timeout (KAFKA-1894)
+
+        /**
+         * 1. 确保这个group的coordinator已经获取到，并且是准备就绪的
+         *    这个方法是阻塞的
+         */
         coordinator.ensureCoordinatorReady();
 
-        // ensure we have partitions assigned if we expect to
+
+        /**
+         * ensure we have partitions assigned if we expect to
+         * 2. 如果是自动分配分区
+         *    确保已经获取了分配的消费分区
+         */
         if (subscriptions.partitionsAutoAssigned())
             coordinator.ensurePartitionAssignment();
 
-        // fetch positions if we have partitions we're subscribed to that we
-        // don't know the offset for
+        /**
+         * fetch positions if we have partitions we're subscribed to that we
+         * don't know the offset for
+         * 3. 判断是否有分区不知道消费进度（offset）
+         * 如果有分区的消费进度是空的，重新找 ordinator group 重新获取一下
+         */
         if (!subscriptions.hasAllFetchPositions())
             updateFetchPositions(this.subscriptions.missingFetchPositions());
 
         long now = time.milliseconds();
 
-        // execute delayed tasks (e.g. autocommits and heartbeats) prior to fetching records
-        // 执行heartbeat任务或者自动提交offset任务
+        /**
+         * execute delayed tasks (e.g. autocommits and heartbeats) prior to fetching records
+         * 4. 执行延迟任务
+         * 执行heartbeat任务 或者 自动提交offset任务
+         */
         client.executeDelayedTasks(now);
 
-        // init any new fetches (won't resend pending fetches)
-        // 直接获取已经收到的数据
+        /**
+         * init any new fetches (won't resend pending fetches)
+         * ****************************************************
+         * 5. 直接获取已经收到的数据
+         * ****************************************************
+         */
         Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
 
         // if data is available already, e.g. from a previous network client poll() call to commit,
@@ -1043,9 +1066,15 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         if (!records.isEmpty())
             return records;
 
-        // 如果没有接收到任何一条消息，则真正地发送fetch请求
+        /**
+         * ************************************************
+         * 6. 如果没有接收到任何一条消息，则真正地发送fetch请求
+         * ************************************************
+         */
         fetcher.sendFetches();
         client.poll(timeout, now);
+
+
         return fetcher.fetchedRecords();
     }
 

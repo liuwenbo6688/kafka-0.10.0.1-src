@@ -123,6 +123,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
         /**
           * 拉取指定group的分区的消费进度
+          *
           */
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
         /**

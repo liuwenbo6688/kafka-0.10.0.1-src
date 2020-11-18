@@ -79,7 +79,12 @@ public class Fetcher<K, V> {
     private final int maxWaitMs;
     private final int fetchSize;
     private final long retryBackoffMs;
+
+    /**
+     *
+     */
     private final int maxPollRecords;
+
     private final boolean checkCrcs;
     private final Metadata metadata;
     private final FetchManagerMetrics sensors;
@@ -133,11 +138,12 @@ public class Fetcher<K, V> {
     public void sendFetches() {
 
         /**
-         *
+         *  针对每一个broker，创建一个FetchRequest， 分别发送出去
          */
         for (Map.Entry<Node, FetchRequest> fetchEntry: createFetchRequests().entrySet()) {
 
             final FetchRequest request = fetchEntry.getValue();
+
             client.send(fetchEntry.getKey(), ApiKeys.FETCH, request)
                     .addListener(
                             /**
@@ -362,8 +368,19 @@ public class Fetcher<K, V> {
         if (this.subscriptions.partitionAssignmentNeeded()) {
             return Collections.emptyMap();
         } else {
+
+            /**
+             * 组织返回的消费数据，按分区分组
+             * ConsumerRecord 就是拉取的数据
+             */
             Map<TopicPartition, List<ConsumerRecord<K, V>>> drained = new HashMap<>();
-            int recordsRemaining = maxPollRecords;
+
+
+            int recordsRemaining = maxPollRecords; // 一次返回的最大数据条数
+
+            /**
+             * 拿到消费数据的迭代器
+             */
             Iterator<CompletedFetch> completedFetchesIterator = completedFetches.iterator();
 
             while (recordsRemaining > 0) {
@@ -373,11 +390,13 @@ public class Fetcher<K, V> {
 
                     CompletedFetch completion = completedFetchesIterator.next();
                     completedFetchesIterator.remove();
+                    // CompletedFetch 转为 PartitionRecords
                     nextInLineRecords = parseFetchedData(completion);
                 } else {
                     recordsRemaining -= append(drained, nextInLineRecords, recordsRemaining);
                 }
             }
+
 
             return drained;
         }
