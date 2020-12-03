@@ -323,8 +323,12 @@ public final class RecordAccumulator {
                     while (batchIterator.hasNext()) {
                         RecordBatch batch = batchIterator.next();
                         boolean isFull = batch != lastBatch || batch.records.isFull();
-                        // check if the batch is expired
-                        // maybeExpire 判断超时逻辑
+
+
+                        /**
+                         * check if the batch is expired
+                         * maybeExpire 判断超时逻辑
+                         */
                         if (batch.maybeExpire(requestTimeout, retryBackoffMs, now, this.lingerMs, isFull)) {
                             expiredBatches.add(batch);
                             count++;
@@ -334,6 +338,7 @@ public final class RecordAccumulator {
                             // Stop at the first batch that has not expired.
                             break;
                         }
+
                     }
                 }
             }
@@ -349,7 +354,11 @@ public final class RecordAccumulator {
      * 重新入队缓冲区
      */
     public void reenqueue(RecordBatch batch, long now) {
-        // 更新几个标志字段
+
+        /**
+         * 更新几个标志字段
+         * 重试次数、最后重试时间、重试标志位
+         */
         batch.attempts++;
         batch.lastAttemptMs = now;
         batch.lastAppendTime = now;
@@ -358,7 +367,9 @@ public final class RecordAccumulator {
 
         Deque<RecordBatch> deque = getOrCreateDeque(batch.topicPartition);
         synchronized (deque) {
-            // 放到队列头部，正常发送时从队尾入队的，所以重试的数据放到头部，是被优先处理
+            /**
+             * 放到队列头部，正常发送时从队尾入队的，所以重试的数据放到头部，是被优先处理
+             */
             deque.addFirst(batch);
         }
     }
@@ -511,7 +522,12 @@ public final class RecordAccumulator {
          */
         Map<Integer, List<RecordBatch>> batches = new HashMap<>();
 
-        for (Node node : nodes) {// for循环每个节点
+        /**
+         * 遍历每一个broker的每一个partition
+         * 取出这个分区的first batch
+         * 按broker的维度汇总起来
+         */
+        for (Node node : nodes) {
             int size = 0;
             List<PartitionInfo> parts = cluster.partitionsForNode(node.id());
             List<RecordBatch> ready = new ArrayList<>();
@@ -527,7 +543,7 @@ public final class RecordAccumulator {
                     if (deque != null) {
 
                         synchronized (deque) {
-                            RecordBatch first = deque.peekFirst();
+                            RecordBatch first = deque.peekFirst(); // 只是 peek
                             if (first != null) {
                                 boolean backoff = first.attempts > 0 && first.lastAttemptMs + retryBackoffMs > now;
                                 // Only drain the batch if it is not during backoff period.
@@ -538,7 +554,7 @@ public final class RecordAccumulator {
                                         // request
                                         break;
                                     } else {
-                                        RecordBatch batch = deque.pollFirst();
+                                        RecordBatch batch = deque.pollFirst(); // 这里才是poll
                                         batch.records.close();
                                         size += batch.records.sizeInBytes();
                                         //

@@ -28,7 +28,11 @@ import java.util.Map;
  */
 final class InFlightRequests {
 
+    /**
+     * max.in.flight.requests.per.connection
+     */
     private final int maxInFlightRequestsPerConnection;
+
     private final Map<String, Deque<ClientRequest>> requests = new HashMap<String, Deque<ClientRequest>>();
 
     public InFlightRequests(int maxInFlightRequestsPerConnection) {

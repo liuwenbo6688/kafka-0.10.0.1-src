@@ -49,7 +49,10 @@ public final class RecordBatch {
     public long lastAppendTime;
     private final List<Thunk> thunks;
     private long offsetCounter = 0L;
-    // 这条消息是否是重试发送的标志位
+
+    /**
+     * 这条消息是否是重试发送的标志位
+     */
     private boolean retry;
 
     public RecordBatch(TopicPartition tp, MemoryRecords records, long now) {
@@ -161,6 +164,9 @@ public final class RecordBatch {
     public boolean maybeExpire(int requestTimeoutMs, long retryBackoffMs, long now, long lingerMs, boolean isFull) {
         boolean expire = false;
 
+        /**
+         * 积压数据的超时判断
+         */
         if (!this.inRetry() && isFull && requestTimeoutMs < (now - this.lastAppendTime))
             expire = true;
         else if (!this.inRetry() && requestTimeoutMs < (now - (this.createdMs + lingerMs)))
@@ -170,7 +176,11 @@ public final class RecordBatch {
 
         if (expire) {
             this.records.close();
-            this.done(-1L, Record.NO_TIMESTAMP, new TimeoutException("Batch containing " + recordCount + " record(s) expired due to timeout while requesting metadata from brokers for " + topicPartition));
+            /**
+             * 对超时的处理
+             */
+            this.done(-1L, Record.NO_TIMESTAMP,
+                    new TimeoutException("Batch containing " + recordCount + " record(s) expired due to timeout while requesting metadata from brokers for " + topicPartition));
         }
 
         return expire;

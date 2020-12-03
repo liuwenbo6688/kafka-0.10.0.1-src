@@ -138,6 +138,10 @@ public class KafkaChannel {
         return socket.getInetAddress().toString();
     }
 
+    /**
+     * 暂存发送的请求
+     * 然后关注OP_WRITE事件
+     */
     public void setSend(Send send) {
         if (this.send != null)
             throw new IllegalStateException("Attempt to begin a send operation with prior send operation still in progress.");
@@ -175,7 +179,9 @@ public class KafkaChannel {
     public Send write() throws IOException {
         Send result = null;
         if (send != null && send(send)) {
-            // 发送完之后，send置为nul
+            /**
+             * 只有请求发送完成，send才会置为nul
+             */
             result = send;
             send = null;
         }

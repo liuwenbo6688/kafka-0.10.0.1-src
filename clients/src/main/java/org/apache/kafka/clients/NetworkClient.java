@@ -259,7 +259,10 @@ public class NetworkClient implements KafkaClient {
         String nodeId = request.request().destination();
         if (!canSendRequest(nodeId))
             throw new IllegalStateException("Attempt to send a request to node " + nodeId + " which is not ready.");
-        // 发送请求
+        /**
+         *  只是暂存待发送的请求
+         *  没有实际的网络请求发生
+         */
         doSend(request, now);
     }
 
@@ -303,16 +306,13 @@ public class NetworkClient implements KafkaClient {
             log.error("Unexpected error during I/O", e);
         }
 
-
         // process completed actions
         long updatedNow = this.time.milliseconds();
         List<ClientResponse> responses = new ArrayList<>();
-
         /**
          * 处理发送出去的请求
          */
         handleCompletedSends(responses, updatedNow);
-
         /**
          * 对于非元数据更新的响应，仅仅是解析下响应，然后放到 responses 列表中
          */
@@ -322,22 +322,19 @@ public class NetworkClient implements KafkaClient {
          * 处理断开连接
          */
         handleDisconnections(responses, updatedNow);
-
-
         /**
          * 处理连接的请求，就是把状态置为CONNECTED
          */
         handleConnections();
-
-
         /**
          * 处理超时机制，已经发送出去的请求的超时判断
          * 怼在inFlightRequests 里面超时的请求
          */
         handleTimedOutRequests(responses, updatedNow);
-
-        // 针对响应调用回调函数
-        // invoke callbacks
+        /**
+         * invoke callbacks
+         * 针对响应调用回调函数
+         */
         for (ClientResponse response : responses) {
             if (response.request().hasCallback()) {
                 try {
@@ -480,9 +477,11 @@ public class NetworkClient implements KafkaClient {
      * @param now The current time
      */
     private void handleTimedOutRequests(List<ClientResponse> responses, long now) {
+
+        // 获取超时的节点
         List<String> nodeIds = this.inFlightRequests.getNodesWithTimedOutRequests(now, this.requestTimeoutMs);
 
-        for (String nodeId : nodeIds) {// 主动关闭和这个broker的连接，任务这个broker已经宕掉了
+        for (String nodeId : nodeIds) { // 主动关闭和这个broker的连接，任务这个broker已经宕掉了
             // close connection to the node
             this.selector.close(nodeId);
             log.debug("Disconnecting from node {} due to request timeout.", nodeId);
@@ -490,7 +489,8 @@ public class NetworkClient implements KafkaClient {
         }
 
         // we disconnected, so we should probably refresh our metadata
-        if (nodeIds.size() > 0)// 再次标记为需要重新拉取元数据
+        if (nodeIds.size() > 0)
+            // 再次标记为需要重新拉取元数据
             metadataUpdater.requestUpdate();
     }
 
@@ -503,12 +503,16 @@ public class NetworkClient implements KafkaClient {
     private void handleCompletedSends(List<ClientResponse> responses, long now) {
         // if no response is expected then when the send is completed, return it
         for (Send send : this.selector.completedSends()) {
-            ClientRequest request = this.inFlightRequests.lastSent(send.destination());
 
-            if (!request.expectResponse()) { // 不care响应，发送出去就可以了
+            ClientRequest request = this.inFlightRequests.lastSent(send.destination());
+            if (!request.expectResponse()) {
+                /**
+                 *  不care请求的响应，发送出去就可以了
+                 */
                 this.inFlightRequests.completeLastSent(send.destination());
                 responses.add(new ClientResponse(request, now, false, null));
             }
+
         }
     }
 

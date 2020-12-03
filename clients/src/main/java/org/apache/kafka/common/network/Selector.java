@@ -107,6 +107,9 @@ public class Selector implements Selectable {
     private final Set<SelectionKey> immediatelyConnectedKeys;
 
     private final List<String> disconnected;
+    /**
+     * 缓存已经建立好连接的节点
+     */
     private final List<String> connected;
     private final List<String> failedSends;
 
@@ -230,8 +233,11 @@ public class Selector implements Selectable {
 
         boolean connected;
         try {
-            // 如果设置为非阻塞的 configureBlocking(false)
-            // 那么connect方法的调用，会初始化一个非阻塞的请求连接
+            /**
+             * 如果设置为非阻塞的 configureBlocking(false)
+             * 那么connect方法的调用，会初始化一个非阻塞的请求连接
+             * connect 的语义
+             */
             connected = socketChannel.connect(address);
         } catch (UnresolvedAddressException e) {
             socketChannel.close();
@@ -377,6 +383,7 @@ public class Selector implements Selectable {
         /**
          * 调用 nioSelector的select方法
          * 是可以被wakeup唤醒的
+         * 返回准备就绪的SelectionKey的数量
          */
         int readyKeys = select(timeout);
 

@@ -108,7 +108,7 @@ public class NetworkReceive implements Receive {
 
             // 拆包问题解决1：如果size没有读满，就不会进入if里面，buffer也就是空，也就不会读数据，直到size读完整
             if (!size.hasRemaining()) {
-                // 读满了就 rewind ，就是position
+                // 读满了就 rewind ，就是position设置为0，可读
                 size.rewind();
 
                 // 这个 receiveSize 代表响应消息的大小
@@ -120,7 +120,10 @@ public class NetworkReceive implements Receive {
                 if (maxSize != UNLIMITED && receiveSize > maxSize)
                     throw new InvalidReceiveException("Invalid receive (size = " + receiveSize + " larger than " + maxSize + ")");
 
-                // 分配实际大小的ByteBuffer
+                /**
+                 * 分配实际大小的ByteBuffer
+                 * 用来接收数据
+                 */
                 this.buffer = ByteBuffer.allocate(receiveSize);
             }
         }

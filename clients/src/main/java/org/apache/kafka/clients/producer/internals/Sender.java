@@ -200,7 +200,7 @@ public class Sender implements Runnable {
 
             if (!this.client.ready(node, now)) {
                 /**
-                 * ready()方法很重要，判断是否和node建立连接
+                 * ready()方法很重要，判断是否和node建立连接并且满足各种条件
                  * 如果跟broker还没有建立连接，是不会发送请求的
                  * 在迭代器中就把这个节点删掉了
                  */
@@ -236,7 +236,7 @@ public class Sender implements Runnable {
 
         /**
          * 构建请求 ClientRequest：
-         * 针对一个broker，构造一个ClientRequest
+         * 针对一个broker，构造一个ClientRequest（根据kafka的二进制协议，定制数据的格式）
          */
         List<ClientRequest> requests = createProduceRequests(batches, now);
 
@@ -371,11 +371,11 @@ public class Sender implements Runnable {
             else
                 exception = error.exception();
 
-            // tell the user the result of their request
-            // 回调每条消息的回调函数
+            /**
+             * tell the user the result of their request
+             * 回调每条消息的回调函数
+             */
             batch.done(baseOffset, timestamp, exception);
-
-            //
             /**
              * 释放buffer 内存空间
              */
@@ -397,7 +397,7 @@ public class Sender implements Runnable {
     private boolean canRetry(RecordBatch batch, Errors error) {
         /**
          * 1 重试次数没有超过设置的上限
-         * 2 RetriableException 有很多实现异常类，必须是可充实的异常发生才能重试比如 LeaderNotAvailableException等
+         * 2 RetriableException 有很多实现异常类，必须是可重试的异常发生才能重试比如 LeaderNotAvailableException等
          */
         return batch.attempts < this.retries && error.exception() instanceof RetriableException;
     }
