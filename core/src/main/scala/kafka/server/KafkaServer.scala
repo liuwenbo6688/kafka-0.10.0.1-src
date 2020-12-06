@@ -680,6 +680,9 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
   def boundPort(protocol: SecurityProtocol = SecurityProtocol.PLAINTEXT): Int = socketServer.boundPort(protocol)
 
+  /**
+   * 初始化 LogManager
+   */
   private def createLogManager(zkClient: ZkClient, brokerState: BrokerState): LogManager = {
     val defaultProps = KafkaServer.copyKafkaConfigToLog(config)
     val defaultLogConfig = LogConfig(defaultProps)

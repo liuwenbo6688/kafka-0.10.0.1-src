@@ -37,6 +37,11 @@ class KafkaRequestHandler(id: Int,
                           apis: KafkaApis) extends Runnable with Logging {
   this.logIdent = "[Kafka Request Handler " + id + " on Broker " + brokerId + "], "
 
+
+  /**
+   *  不断地从requestChannel 拿到接收的请求 Request
+   *  然后转交给  KafkaApis 处理
+   */
   def run() {
     while (true) {
       try {
@@ -92,7 +97,7 @@ class KafkaRequestHandler(id: Int,
 //------------------------------------------KafkaRequestHandlerPool start-----------------------------------------------------------------------------------
 class KafkaRequestHandlerPool(val brokerId: Int,
                               val requestChannel: RequestChannel,
-                              val apis: KafkaApis,
+                              val apis: KafkaApis, // 处理每个请求具体逻辑的组件
                               numThreads: Int) extends Logging with KafkaMetricsGroup {
 
   /* a meter to track the average free capacity of the request handlers */

@@ -402,6 +402,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     // ----------------------sendResponseCallback start----------------------------------------------------------------
     // the callback for sending a produce response
+    // 回调函数
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]) {
 
       // responseStatus 对应每个分区的结果， sendResponseCallback作为回调函数传入
@@ -451,8 +452,13 @@ class KafkaApis(val requestChannel: RequestChannel,
             case version => throw new IllegalArgumentException(s"Version `$version` of ProduceRequest is not handled. Code must be updated.")
           }
 
-
-          requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, respHeader, respBody)))
+          /**
+           *
+           */
+          requestChannel.sendResponse(
+                new RequestChannel.Response(request,
+                                            new ResponseSend(request.connectionId, respHeader, respBody))
+          )
         }
       }
 
@@ -486,7 +492,8 @@ class KafkaApis(val requestChannel: RequestChannel,
       replicaManager.appendMessages(produceRequest.timeout.toLong,// 超时时间
                                     produceRequest.acks,  // 著名的acks
                                     internalTopicsAllowed,
-                                    authorizedMessagesPerPartition, // 有权限控制的，授权的topic才能写入
+                                    // 有权限控制的，授权的topic才能写入 Map[TopicPartition, ByteBufferMessageSet]
+                                    authorizedMessagesPerPartition,
                                     sendResponseCallback /*返回响应的回调函数*/)
 
       // if the request is put into the purgatory, it will have a held reference

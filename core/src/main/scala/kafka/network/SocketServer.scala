@@ -54,6 +54,9 @@ import scala.util.control.{ControlThrowable, NonFatal}
  */
 class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time) extends Logging with KafkaMetricsGroup {
 
+  /**
+   * broker是可以监听多个端口号的，一般我们就设置一个9092
+   */
   private val endpoints = config.listeners
 
   // num.network.threads
@@ -109,7 +112,11 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
         for (i <- processorBeginIndex until processorEndIndex)
                 processors(i) = newProcessor(i, connectionQuotas, protocol)
 
-        // 初始化 Acceptor线程
+
+        /**
+         * 初始化 Acceptor线程，其实每一个端口号对应一个 Acceptor
+         * 并且传入分配的processors
+         */
         val acceptor = new Acceptor(endpoint,
           sendBufferSize,
           recvBufferSize,
@@ -295,7 +302,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
 
   /**
    * Accept loop that checks for new connection attempts
-    *  循环接收新的请求连接
+    *  循环接收新的连接请求
    */
   def run() {
     /**
@@ -470,7 +477,8 @@ private[kafka] class Processor(val id: Int,
   }
 
   /**
-    *  Processor线程管理新的连接请求
+    *  Processor线程管理新的连接请求的队列
+   *  有新的请求进来，Connection会被Acceptor放到这个队列中
     */
   private val newConnections = new ConcurrentLinkedQueue[SocketChannel]()
 
@@ -495,14 +503,19 @@ private[kafka] class Processor(val id: Int,
     * kafka selector，用了scala里的语法糖，重命名为KSelector
     */
   private val selector = new KSelector(
-    maxRequestSize,
-    connectionsMaxIdleMs,
-    metrics,
-    time,
-    "socket-server",
-    metricTags,
-    false,
-    ChannelBuilders.create(protocol, Mode.SERVER, LoginType.SERVER, channelConfigs, null, true))
+        maxRequestSize,
+        connectionsMaxIdleMs,
+        metrics,
+        time,
+        "socket-server",
+        metricTags,
+        false,
+        ChannelBuilders.create(protocol, Mode.SERVER,
+                                LoginType.SERVER,
+                                channelConfigs,
+                                null,
+                                true)
+  )
 
   override def run() {
     startupComplete()
@@ -514,40 +527,35 @@ private[kafka] class Processor(val id: Int,
       */
     while (isRunning) {
       try {
-
         /**
           * setup any new connections that have been queued up
-          * 只要这个while循环到这里,就一定会把队列里等待的连接(newConnections) 进行处理
+          * 1. 只要这个while循环到这里,就一定会把队列里等待的连接(newConnections) 进行处理
           */
         configureNewConnections()
-
         /**
           * register any new responses for writing
-          * 处理新的响应结果,返回给client端
+          * 4-1. 处理新的响应结果,暂存到kafka channel，关注op_write事件
           */
         processNewResponses()
-
         /**
-          * 和生产端的poll是一样的，Kakfa Selector
+          * 2. 和生产端的poll是一样的，Kakfa Selector
           * 把请求放到 kafka selector的CompletedReceives
+         *  4-2. 将响应发送出去
+         *  6-1. 处理过程发生异常
           */
         poll()
-
         /**
-          * 对已经接收完毕的请求进行处理
+          * 3. 对已经接收完毕的请求进行处理
           */
         processCompletedReceives()
-
         /**
-          * 对已经发送完毕的响应进行处理
+          * 5. 对已经发送完毕的响应进行处理
           */
         processCompletedSends()
-
         /**
-          * 处理断开的连接
+          * 6-2. 处理断开的连接
           */
         processDisconnected()
-
       } catch {
         // We catch all the throwables here to prevent the processor thread from exiting. We do this because
         // letting a processor exit might cause a bigger impact on the broker. Usually the exceptions thrown would
@@ -579,7 +587,7 @@ private[kafka] class Processor(val id: Int,
         curr.responseAction match {
 
           /**
-            * 1.
+            * 1.不需要返回给客户端
             */
           case RequestChannel.NoOpAction =>
             // There is no response to send to the client, we need to read more pipelined requests
@@ -623,7 +631,10 @@ private[kafka] class Processor(val id: Int,
       response.request.updateRequestMetrics()
     }
     else {
-      // 发送响应结果 response
+      /**
+       * 发送响应结果 response
+       * 然后把发送的response暂存到 inflightResponses 中
+       */
       selector.send(response.responseSend)
       inflightResponses += (response.request.connectionId -> response)
     }
@@ -632,7 +643,7 @@ private[kafka] class Processor(val id: Int,
   private def poll() {
     try
       /**
-        * kafka Selector
+        * kafka Selector，300ms超时
         */
       selector.poll(300)
     catch {
@@ -717,7 +728,6 @@ private[kafka] class Processor(val id: Int,
       * 加入新客户端连接的队列中
       */
     newConnections.add(socketChannel)
-
     /**
       * 唤醒selector的select()方法，来处理新链接
       */

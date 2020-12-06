@@ -297,7 +297,7 @@ public class Selector implements Selectable {
          * 创建 KafkaChannel，加入到缓存map中
          */
         KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);
-        key.attach(channel);
+        key.attach(channel);// 反向把KafkaChannel 绑定到 SelectionKey 上
         this.channels.put(id, channel);
     }
 
@@ -424,6 +424,7 @@ public class Selector implements Selectable {
             iterator.remove();
 
             // 这里就从SelectionKey拿到之前 atach 的 KafkaChannel
+            // SelectionKey 和 KafkaChannel 是一一对应的
             KafkaChannel channel = channel(key);
 
             // register all per-connection metrics at once
@@ -458,6 +459,10 @@ public class Selector implements Selectable {
                         && !hasStagedReceive(channel) /*没有积压的Staged消息*/ ) {
                     NetworkReceive networkReceive;
 
+                    /**
+                     * 在这个环节是可能读取多条请求数据的
+                     * while循环读取的，直到读不到数据
+                     */
                     // 针对一个broker的连接反复的读，粘包和拆包问题的解决方式是大亮点
                     while ((networkReceive = channel.read()) != null)
                         // 读完一个完整的Receive就暂存起来
@@ -491,8 +496,6 @@ public class Selector implements Selectable {
                 else
                     log.warn("Unexpected error from {}; closing connection", desc, e);
                 close(channel);
-
-
                 /**
                  * 异常处理，放入断开的连接列表中
                  */
@@ -707,7 +710,7 @@ public class Selector implements Selectable {
                 Map.Entry<KafkaChannel, Deque<NetworkReceive>> entry = iter.next();
                 KafkaChannel channel = entry.getKey();
 
-                if (!channel.isMute()) {
+                if (!channel.isMute()) {//  isMute的判断？
                     Deque<NetworkReceive> deque = entry.getValue();
 
                     /**

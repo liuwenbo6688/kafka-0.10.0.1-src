@@ -75,7 +75,7 @@ case class LogAppendInfo(var firstOffset: Long,
  *
  */
 @threadsafe
-class Log(val dir: File,
+class Log(val dir: File, // 分区目录 /data/logs/test-0
           @volatile var config: LogConfig,
           @volatile var recoveryPoint: Long = 0L, // 代表已经flush到磁盘的offset
           scheduler: Scheduler,
@@ -408,25 +408,31 @@ class Log(val dir: File,
             .format(validMessages.sizeInBytes, config.segmentSize))
         }
 
-        // maybe roll the log if this segment is full
         /**
+         *  maybe roll the log if this segment is full
           * 如果一个segment写满了，可能会创建一个新的segment
           */
         val segment = maybeRoll(validMessages.sizeInBytes)
 
-        // now append to the log
-        // 通过 segment 写数据
+        /**
+         * now append to the log
+         * 通过 segment 写数据
+         */
         segment.append(appendInfo.firstOffset, validMessages)
 
-        // increment the log end offset
-        // 更新 LEO为刚写入的这一批数据的最后一条数据的offset +1
+        /**
+         * increment the log end offset
+         * 更新 LEO为刚写入的这一批数据的最后一条数据的offset + 1
+         */
         updateLogEndOffset(appendInfo.lastOffset + 1)
 
         trace("Appended message set to log %s with first offset: %d, next offset: %d, and messages: %s"
           .format(this.name, appendInfo.firstOffset, nextOffsetMetadata.messageOffset, validMessages))
 
-        // 固定的时间频率刷新到磁盘上
-        // flush.messages 自己配置的，配置文件配置
+        /**
+         * 固定的频率刷新到磁盘上（flush index文件、log日志段文件）
+         * flush.messages 自己配置的，配置文件配置,（10000条）
+         */
         if (unflushedMessages >= config.flushInterval)
           flush()
 
@@ -722,14 +728,12 @@ class Log(val dir: File,
 
       // 获取 LEO
       val newOffset = logEndOffset
-
       /**
        * 生成日志文件 xxxx.log  +  索引文件 xxxx.index
        * 在分区目录下，构建一个新的文件，用LEO作为文件名就可以了
        */
       val logFile = logFilename(dir, newOffset)
       val indexFile = indexFilename(dir, newOffset)
-
       for(file <- List(logFile, indexFile); if file.exists) {
         // 文件存在需要先删除
         warn("Newly rolled segment file " + file.getName + " already exists; deleting it first")
@@ -762,10 +766,15 @@ class Log(val dir: File,
       if(prev != null)
         throw new KafkaException("Trying to roll a new log segment for topic partition %s with start offset %d while it already exists.".format(name, newOffset))
 
-      // We need to update the segment base offset and append position data of the metadata when log rolls.
-      // The next offset should not change.
+      /**
+       * We need to update the segment base offset and append position data of the metadata when log rolls.
+       * The next offset should not change.
+       */
       updateLogEndOffset(nextOffsetMetadata.messageOffset)
-      // schedule an asynchronous flush of the old segment
+
+      /**
+       * schedule an asynchronous flush of the old segment
+       */
       scheduler.schedule("flush-log", () => flush(newOffset), delay = 0L)
 
       info("Rolled new log segment for '" + name + "' in %.0f ms.".format((System.nanoTime - start) / (1000.0*1000.0)))

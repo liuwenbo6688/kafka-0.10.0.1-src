@@ -299,8 +299,6 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
       *  这批数据是存在 buffer 中的
       *  NIO是多么重要......
       */
-
-
     // 为什么要  mark() 和 reset()
     buffer.mark()
 

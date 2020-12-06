@@ -57,10 +57,13 @@ class OffsetIndex(@volatile private[this] var _file: File, val baseOffset: Long,
   
   private val lock = new ReentrantLock
 
-  // 这个东西大致可以理解为是基于os cache实现的文件映射到内存的技术
-  // 就是可以把底层的.index文件映射到os内存里去
-  // 针对这个东西的读和写，都是基于os cache内存来执行的
-  /* initialize the memory mapping for this index */
+
+  /*
+  *  initialize the memory mapping for this index
+  *  这个东西大致可以理解为是基于os cache实现的文件映射到内存的技术
+  *  就是可以把底层的.index文件映射到os内存里去
+  *  针对这个东西的读和写，都是基于os cache内存来执行的
+  * */
   @volatile
   private[this] var mmap: MappedByteBuffer = {
     val newlyCreated = _file.createNewFile()

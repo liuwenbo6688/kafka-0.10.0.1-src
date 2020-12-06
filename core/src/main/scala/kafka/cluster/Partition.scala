@@ -67,7 +67,10 @@ class Partition(val topic: String,
   // partition的leader brokerId
   @volatile var leaderReplicaIdOpt: Option[Int] = None
 
-  // 当前分区的isr列表
+  /**
+   * 当前分区的isr列表
+   * 每个Partition分区都有自己的ISR列表
+   */
   @volatile var inSyncReplicas: Set[Replica] = Set.empty[Replica]
 
   /* Epoch of the controller that last changed the leader. This needs to be initialized correctly upon broker startup.
@@ -526,9 +529,10 @@ class Partition(val topic: String,
               .format(topic, partitionId, inSyncSize, minIsr))
           }
 
-
           /**
+           * *************************************************************
             * 获取这个Partition对应的Log, 基于这个Log对象把数据写入进去
+           * *************************************************************
             */
           val info = log.append(messages, assignOffsets = true)
 

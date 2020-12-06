@@ -44,13 +44,16 @@ import java.io.{IOException, File}
 class LogSegment(val log: FileMessageSet,
                  val index: OffsetIndex,
                  val baseOffset: Long,
-                 val indexIntervalBytes: Int,
+                 val indexIntervalBytes: Int, // index.interval.bytes
                  val rollJitterMs: Long,
                  time: Time) extends Logging {
 
   var created = time.milliseconds
 
-  /* the number of bytes since we last added an entry in the offset index */
+  /**
+   * the number of bytes since we last added an entry in the offset index
+   * 自从上一次写入稀疏索引条目之后到当前时间，写入日志段的数据字节数
+   * */
   private var bytesSinceLastIndexEntry = 0
 
   def this(dir: File, startOffset: Long, indexIntervalBytes: Int, maxIndexSize: Int, rollJitterMs: Long, time: Time, fileAlreadyExists: Boolean = false, initFileSize: Int = 0, preallocate: Boolean = false) =
@@ -80,7 +83,7 @@ class LogSegment(val log: FileMessageSet,
    *
    * It is assumed this method is being called from within a lock.
    *
-   * @param offset The first offset in the message set.
+   * @param offset The first offset in the message set. 要写入的这一批的数据的第一个offset
    * @param messages The messages to append.
    */
   @nonthreadsafe
@@ -91,11 +94,16 @@ class LogSegment(val log: FileMessageSet,
       /**
        * append an entry to the index (if needed)
        * 先写index文件  index本质是一个稀疏索引
-       * indexIntervalBytes 默认 4096，也就是每写入4096条数据写入一条索引
+       * indexIntervalBytes 默认 4096，也就是每写入 4096字节 数据添加一条索引
        */
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
         /**
           * OffsetIndex的append，追加稀疏索引
+         * offset 1023 -> 物理位置
+         * offset 3065 -> 物理位置
+         * offset 5078 -> 物理位置
+         * offset 7093 -> 物理位置
+         * 通过offset二分查找
           */
         index.append(offset, log.sizeInBytes())
         this.bytesSinceLastIndexEntry = 0 // 重新置为0，下次到4096的时候，再写一条系数索引
@@ -297,6 +305,8 @@ class LogSegment(val log: FileMessageSet,
   def flush() {
     LogFlushStats.logFlushTimer.time {
       // 刷新到磁盘，其实就是 force
+      // 为什么index文件用MappedByteBuffer？
+      // 因为索引文件系数索引是非常小的，完全可以都写着在内存里，然后定期flush
       log.flush()
       index.flush()
     }

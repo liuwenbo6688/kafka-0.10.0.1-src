@@ -188,10 +188,14 @@ object RequestChannel extends Logging {
 class RequestChannel(val numProcessors: Int, val queueSize: Int/*queued.max.requests  队列的大小*/) extends KafkaMetricsGroup {
   private var responseListeners: List[(Int) => Unit] = Nil
 
-  // 请求队列, 这是一个阻塞队列
+  /**
+   * 请求队列, 这是一个阻塞队列
+   */
   private val requestQueue = new ArrayBlockingQueue[RequestChannel.Request](queueSize)
-
-  // 响应结果队列
+  /**
+   * 响应结果队列
+   * 每个Processor 对应一个 BlockingQueue
+   */
   private val responseQueues = new Array[BlockingQueue[RequestChannel.Response]](numProcessors)
   for(i <- 0 until numProcessors)
     responseQueues(i) = new LinkedBlockingQueue[RequestChannel.Response]()

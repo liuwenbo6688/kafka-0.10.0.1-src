@@ -124,14 +124,15 @@ class ReplicaManager(val config: KafkaConfig,
 
   private val replicaStateChangeLock = new Object
 
-
   /**
     *  拉取副本的核心组件
     */
   val replicaFetcherManager =
                 new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix)
 
-  // 高水位
+  /**
+   * 高水位相关的变量
+   */
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
   val highWatermarkCheckpoints = config.logDirs.map(dir => (new File(dir).getAbsolutePath, new OffsetCheckpoint(new File(dir, ReplicaManager.HighWatermarkFilename)))).toMap
   private var hwThreadInitialized = false
@@ -362,14 +363,14 @@ class ReplicaManager(val config: KafkaConfig,
 
       /**
         * 直接调用 appendToLocalLog()方法将数据写入每个分区的磁盘文件中
-        * 然后会获取到本地磁盘文件写入的每个结果
+        * 然后会获取到本地磁盘文件写入的每个结果, 每个分区 -> LogAppendResult,  Map[TopicPartition, LogAppendResult]
         */
       val localProduceResults = appendToLocalLog(internalTopicsAllowed, messagesPerPartition, requiredAcks)
 
 
       debug("Produce to local log in %d ms".format(SystemTime.milliseconds - sTime))
 
-      // produceStatus =  Map[TopicPartition, ProducePartitionStatus]
+      // 响应封装 produceStatus =  Map[TopicPartition, ProducePartitionStatus]
       val produceStatus = localProduceResults.map { case (topicPartition, result) =>
         topicPartition ->
                   ProducePartitionStatus(
@@ -464,7 +465,7 @@ class ReplicaManager(val config: KafkaConfig,
 
       // reject appending to internal topics if it is not allowed
       if (Topic.isInternal(topicPartition.topic) && !internalTopicsAllowed) {
-        // 内部topic,  __consumer_offsets,内部使用
+        // 内部topic,  __consumer_offsets, 没有权限直接返回
         (topicPartition, LogAppendResult(
           LogAppendInfo.UnknownLogAppendInfo,
           Some(new InvalidTopicException("Cannot append to internal topic %s".format(topicPartition.topic)))))

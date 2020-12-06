@@ -71,6 +71,7 @@ class LogManager(val logDirs: Array[File], // log.dirs ，可以有多个目录�
 
   /**
     *  每个分区对应一个 Log 对象
+   *   每个Log对应多个 LogSegment（日志段文件）
     */
   private val logs = new Pool[TopicAndPartition, Log]()
 
@@ -176,6 +177,8 @@ class LogManager(val logDirs: Array[File], // log.dirs ，可以有多个目录�
         dirContent <- Option(dir.listFiles).toList
         logDir <- dirContent if logDir.isDirectory
       } yield {
+
+        // 封装 Runnable 返回
         CoreUtils.runnable {
           // 这个方法当做线程来执行
 
