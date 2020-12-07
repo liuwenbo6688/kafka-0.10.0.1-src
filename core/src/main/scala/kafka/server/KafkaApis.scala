@@ -81,15 +81,15 @@ class KafkaApis(val requestChannel: RequestChannel,
          */
         case ApiKeys.PRODUCE => handleProducerRequest(request)
         /**
-          * 1）follower从leader抓取数据请求
+          * 1-follower从leader抓取数据请求
           * fetch的逻辑  follower来拉取副本
-          * 1、 先会尝试从本地磁盘文件读取指定offset之后的数据
-          * 2、 如果能读取到，那么就直接返回给人家就可以了
-          * 3、 是不是考虑更新一下 HW, ISR,这些东西是否需要维护
-          * 4、 如果拉取不到任何数据，此时需要采用时间轮机制，延迟执行fetch
-          * 5、 如果leader分区有新的数据写入，此时就可以唤醒时间轮中等待的fetch request来执行拉取数据
+          * 1)、 先会尝试从本地磁盘文件读取指定offset之后的数据
+          * 2)、 如果能读取到，那么就直接返回给人家就可以了
+          * 3)、 是不是考虑更新一下 HW, ISR,这些东西是否需要维护
+          * 4)、 如果拉取不到任何数据，此时需要采用时间轮机制，延迟执行fetch
+          * 5)、 如果leader分区有新的数据写入，此时就可以唤醒时间轮中等待的fetch request来执行拉取数据
           *
-          * 2）消费者从broker消费数据请求
+          * 2-消费者从broker消费数据请求
           */
         case ApiKeys.FETCH => handleFetchRequest(request)
         /**

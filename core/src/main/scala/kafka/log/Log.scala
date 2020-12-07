@@ -561,7 +561,9 @@ class Log(val dir: File, // 分区目录 /data/logs/test-0
     if(startOffset == next)
       return FetchDataInfo(currentNextOffsetMetadata, MessageSet.Empty)
 
-    // NavigableMap 的 floorEntry找到小于startOffset的所有段中最大的那个
+    /**
+     * NavigableMap 的 floorEntry找到小于startOffset的所有段中最大的那个
+     */
     var entry = segments.floorEntry(startOffset)
 
     // attempt to read beyond the log end offset is an error

@@ -125,7 +125,7 @@ class ReplicaManager(val config: KafkaConfig,
   private val replicaStateChangeLock = new Object
 
   /**
-    *  拉取副本的核心组件
+    *  拉取副本的核心组件（副本同步的组件）
     */
   val replicaFetcherManager =
                 new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix)
@@ -547,8 +547,6 @@ class ReplicaManager(val config: KafkaConfig,
     val isFromFollower = replicaId >= 0
     val fetchOnlyFromLeader: Boolean = replicaId != Request.DebuggingConsumerId
     val fetchOnlyCommitted: Boolean = ! Request.isValidBrokerId(replicaId)
-
-
     /**
       * read from local logs
       * 从本地磁盘读取数据出来，指定了每个分区从哪个offset开始读取

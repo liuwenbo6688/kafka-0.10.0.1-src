@@ -50,9 +50,9 @@ abstract class AbstractFetcherThread(name: String,
   type PD <: PartitionData
 
   /**
-    *
+    * a (topic, partition) -> partitionFetchState map
     */
-  private val partitionMap = new mutable.HashMap[TopicAndPartition, PartitionFetchState] // a (topic, partition) -> partitionFetchState map
+  private val partitionMap = new mutable.HashMap[TopicAndPartition, PartitionFetchState]
 
 
   private val partitionMapLock = new ReentrantLock
@@ -94,9 +94,10 @@ abstract class AbstractFetcherThread(name: String,
     */
   override def doWork() {
 
-    //1 构建 FetchRequest
+    /**
+     * 1 构建 FetchRequest
+     */
     val fetchRequest = inLock(partitionMapLock) {
-
       /**
         * 针对leader都在某个Broker上的一批follower分区,构建一个 fetchRequest 对象
         * 会发送给一个Broker，说我们这儿有一批follower分区要拉取数据
@@ -110,8 +111,10 @@ abstract class AbstractFetcherThread(name: String,
       fetchRequest
     }
 
+    /**
+     * 2. 处理 fetchRequest，发送请求，拿到返回响应，写入数据
+     */
     if (!fetchRequest.isEmpty)
-      // 处理这个构建好的
       processFetchRequest(fetchRequest)
   }
 

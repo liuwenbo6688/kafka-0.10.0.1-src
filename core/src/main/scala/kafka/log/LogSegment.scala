@@ -166,7 +166,6 @@ class LogSegment(val log: FileMessageSet,
 
     val logSize = log.sizeInBytes // this may change, need to save a consistent copy
 
-
     /**
       * 稀疏索引的二分查找
       * 返回offset
