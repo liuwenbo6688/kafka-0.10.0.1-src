@@ -305,7 +305,6 @@ class Partition(val topic: String,
           val replica = getReplica(replicaId).get
           val leaderHW = leaderReplica.highWatermark
 
-
           /**
             * 判断是否重新加入isr的条件
             * 1、 首先follower partition不在 ISR 列表中
@@ -325,8 +324,6 @@ class Partition(val topic: String,
             updateIsr(newInSyncReplicas)
             replicaManager.isrExpandRate.mark()
           }
-
-
 
           /**
             * 判断是否可以更新 HW，可以更新就

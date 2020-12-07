@@ -51,6 +51,8 @@ abstract class AbstractFetcherThread(name: String,
 
   /**
     * a (topic, partition) -> partitionFetchState map
+   * 在什么地方初始化？ addPartitions() 方法初始化
+   * 当前这个fetcher线程需要拉取的分区
     */
   private val partitionMap = new mutable.HashMap[TopicAndPartition, PartitionFetchState]
 
@@ -161,7 +163,6 @@ abstract class AbstractFetcherThread(name: String,
             // we append to the log if the current offset is defined and it is the same as the offset requested during fetch
             if (fetchRequest.offset(topicAndPartition) == currentPartitionFetchState.offset) {
               Errors.forCode(partitionData.errorCode) match {
-
                 //
                 case Errors.NONE =>
                   try {
@@ -175,8 +176,10 @@ abstract class AbstractFetcherThread(name: String,
                     fetcherLagStats.getAndMaybePut(topic, partitionId).lag = Math.max(0L, partitionData.highWatermark - newOffset)
                     fetcherStats.byteRate.mark(validBytes)
 
-                    // 处理每个分区的数据
-                    // Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
+                    /**
+                     * Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
+                     * 处理这个分区的数据
+                     */
                     processPartitionData(topicAndPartition, currentPartitionFetchState.offset, partitionData)
 
                   } catch {

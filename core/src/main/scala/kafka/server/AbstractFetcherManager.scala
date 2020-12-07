@@ -30,7 +30,10 @@ import org.apache.kafka.common.utils.Utils
 abstract class AbstractFetcherManager(protected val name: String, clientId: String, numFetchers: Int = 1)
   extends Logging with KafkaMetricsGroup {
 
-  // map of (source broker_id, fetcher_id per source broker) => fetcher
+  /**
+   * map of (source broker_id, fetcher_id per source broker) => fetcher
+   * 缓存 fetcher 线程的Map
+   */
   private val fetcherThreadMap = new mutable.HashMap[BrokerAndFetcherId, AbstractFetcherThread]
 
   private val mapLock = new Object
@@ -80,9 +83,14 @@ abstract class AbstractFetcherManager(protected val name: String, clientId: Stri
     */
   def addFetcherForPartitions(partitionAndOffsets: Map[TopicAndPartition, BrokerAndInitialOffset]) {
     mapLock synchronized {
+      /**
+       * 参数partitionAndOffsets : Map[TopicAndPartition, BrokerAndInitialOffset]
+       * 代表着需要拉取的那一部分分区的数据
+       */
 
       val partitionsPerFetcher = partitionAndOffsets.groupBy{ case(topicAndPartition, brokerAndInitialOffset) =>
-        BrokerAndFetcherId(brokerAndInitialOffset.broker, getFetcherId(topicAndPartition.topic, topicAndPartition.partition))}
+          BrokerAndFetcherId(brokerAndInitialOffset.broker, getFetcherId(topicAndPartition.topic, topicAndPartition.partition))
+      }
 
       for ((brokerAndFetcherId, partitionAndOffsets) <- partitionsPerFetcher) {
         var fetcherThread: AbstractFetcherThread = null
@@ -95,13 +103,18 @@ abstract class AbstractFetcherManager(protected val name: String, clientId: Stri
               */
             fetcherThread = createFetcherThread(brokerAndFetcherId.fetcherId, brokerAndFetcherId.broker)
 
+            // 缓存fetcher线程
             fetcherThreadMap.put(brokerAndFetcherId, fetcherThread)
-            fetcherThread.start
+            fetcherThread.start//启动fetcher线程
         }
 
-        fetcherThreadMap(brokerAndFetcherId).addPartitions(partitionAndOffsets.map { case (topicAndPartition, brokerAndInitOffset) =>
-          topicAndPartition -> brokerAndInitOffset.initOffset
-        })
+        /**
+         * 将需要拉取的分区，注入给fetcher线程
+         */
+        fetcherThreadMap(brokerAndFetcherId)
+          .addPartitions(partitionAndOffsets.map { case (topicAndPartition, brokerAndInitOffset) =>
+              topicAndPartition -> brokerAndInitOffset.initOffset
+            })
       }
     }
 

@@ -543,9 +543,11 @@ class ReplicaManager(val config: KafkaConfig,
                     fetchInfo: immutable.Map[TopicAndPartition, PartitionFetchInfo],
                     responseCallback: Map[TopicAndPartition, FetchResponsePartitionData] => Unit) {
 
-    // 如果replicaId>=0,说明是从follower发送过来的拉取副本的请求
+    // 如果replicaId>=0, 说明是从follower发送过来的拉取副本的请求
     val isFromFollower = replicaId >= 0
+    // 只能从leader拉取数据
     val fetchOnlyFromLeader: Boolean = replicaId != Request.DebuggingConsumerId
+    // 只拉取已提交的数据， consumer消费数据的情况
     val fetchOnlyCommitted: Boolean = ! Request.isValidBrokerId(replicaId)
     /**
       * read from local logs
@@ -554,17 +556,12 @@ class ReplicaManager(val config: KafkaConfig,
       * logReadResults: Map[TopicAndPartition, LogReadResult]
       */
     val logReadResults = readFromLocalLog(fetchOnlyFromLeader, fetchOnlyCommitted, fetchInfo)
-
-
-    // if the fetch comes from the follower,
-    // update its corresponding log end offset
     /**
+     *   if the fetch comes from the follower, update its corresponding log end offset
       *  如果是follower同步数据， 还要更新leader中维护的follower的 LEO 和 HW
       */
     if(Request.isValidBrokerId(replicaId))
-      updateFollowerLogReadResults(replicaId, logReadResults)
-
-
+        updateFollowerLogReadResults(replicaId, logReadResults)
     /**
       * check if this fetch request can be satisfied right away
       * 统计一共读到的字节数，下面是否要立即返回的判断，需要使用这个变量
@@ -591,21 +588,23 @@ class ReplicaManager(val config: KafkaConfig,
       || bytesReadable >= fetchMinBytes
       || errorReadingData) {
 
+      // 构造返回的数据
       val fetchPartitionData = logReadResults.mapValues(result =>
         FetchResponsePartitionData(result.errorCode, result.hw, result.info.messageSet))
 
       // 如果可以立即返回的话，直接调用回调函数
       responseCallback(fetchPartitionData)
     } else {
-
       /**
         * 没有读到数据，延迟调度?
+        * 最长等待timeout，返回数据
         */
       // construct the fetch results from the read results
       val fetchPartitionStatus = logReadResults.map { case (topicAndPartition, result) =>
         (topicAndPartition, FetchPartitionStatus(result.info.fetchOffsetMetadata, fetchInfo.get(topicAndPartition).get))
       }
       val fetchMetadata = FetchMetadata(fetchMinBytes, fetchOnlyFromLeader, fetchOnlyCommitted, isFromFollower, fetchPartitionStatus)
+      // DelayedFetch
       val delayedFetch = new DelayedFetch(timeout, fetchMetadata, this, responseCallback)
 
       // create a list of (topic, partition) pairs to use as keys for this delayed fetch operation
@@ -1024,15 +1023,16 @@ class ReplicaManager(val config: KafkaConfig,
     readResults.foreach { case (topicAndPartition, readResult) =>
       getPartition(topicAndPartition.topic, topicAndPartition.partition) match {
         case Some(partition) =>
-
           /**
             *
             */
           partition.updateReplicaLogReadResult(replicaId, readResult)
 
-          // for producer requests with ack > 1, we need to check
-          // if they can be unblocked after some follower's log end offsets have moved
-          // produce任务的延迟调度
+          /**
+           * for producer requests with ack > 1, we need to check
+           * if they can be unblocked after some follower's log end offsets have moved
+           * produce任务的延迟调度
+           */
           tryCompleteDelayedProduce(new TopicPartitionOperationKey(topicAndPartition))
         case None =>
           warn("While recording the replica LEO, the partition %s hasn't been created.".format(topicAndPartition))

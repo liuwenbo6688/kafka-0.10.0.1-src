@@ -128,27 +128,25 @@ class ReplicaFetcherThread(name: String,
         trace("Follower %d has replica log end offset %d for partition %s. Received %d messages and leader hw %d"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, topicAndPartition, messageSet.sizeInBytes, partitionData.highWatermark))
 
-      // 1、拿到数据就往磁盘写
-      // 这个地方，不管是leader还是follower写磁盘文件的方法是一样的
-      // 也就是两边更新LEO的方式也是一样的
-      replica.log.get.append(messageSet,
-        assignOffsets = false //因为是拉取leader的数据，不需要分配offset，offset是leader那边已经指定好的
-      )
-
+      /**
+       *  1、拿到数据就往磁盘写
+       *  这个地方，不管是leader还是follower写磁盘文件的方法是一样的
+       *  也就是两边更新LEO的方式也是一样的
+       *  注意不同点，因为是拉取leader的数据，不需要分配offset，offset是leader那边已经指定好的
+       *  所以设置assignOffsets = false 即可
+       */
+      replica.log.get.append(messageSet, assignOffsets = false)
 
       if (logger.isTraceEnabled)
         trace("Follower %d has replica log end offset %d after appending %d bytes of messages for partition %s"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, messageSet.sizeInBytes, topicAndPartition))
 
-      // 2、follower 更新 HW
-      // 每次fetch数据的时候，人家leader会把自己的HW返回给你
-      // * follower而言，自己的LEO和leader的HW的最小值，作为自己的HW *
+      /**
+       * 2、follower 更新 HW
+       * 每次fetch数据的时候，人家leader会把自己的HW返回给你
+       * follower而言，自己的LEO和leader的HW的最小值，作为自己的HW
+       */
       val followerHighWatermark = replica.logEndOffset.messageOffset.min(partitionData.highWatermark)
-
-
-      // for the follower replica, we do not need to keep
-      // its segment base offset the physical position,
-      // these values will be computed upon making the leader
       replica.highWatermark = new LogOffsetMetadata(followerHighWatermark)
 
       if (logger.isTraceEnabled)
@@ -266,7 +264,11 @@ class ReplicaFetcherThread(name: String,
         // 正常情况走这个分支，可以阻塞的发送请求了
         val send = new RequestSend(sourceBroker.id.toString, header, request.toStruct)
         val clientRequest = new ClientRequest(time.milliseconds(), true, send, null)
-        // 采用同步阻塞的方式，发送请求出去
+
+        /**
+         * 采用同步阻塞的方式，发送请求出去
+         * 返回响应 ClientResponse
+         */
         networkClient.blockingSendAndReceive(clientRequest)(time)
       }
     }

@@ -59,8 +59,10 @@ abstract class ShutdownableThread(val name: String, val isInterruptible: Boolean
   override def run(): Unit = {
     info("Starting ")
     try{
-      while(isRunning.get()){
-        //
+      while(isRunning.get()) {
+        /**
+         * 调用doWork，而且是不停地循环调用
+         */
         doWork()
       }
     } catch{

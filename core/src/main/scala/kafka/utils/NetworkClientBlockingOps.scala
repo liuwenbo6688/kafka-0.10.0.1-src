@@ -82,8 +82,8 @@ class NetworkClientBlockingOps(val client: NetworkClient) extends AnyVal {
     client.send(request, time.milliseconds())
 
     // 先看 pollContinuously
-    //
-    pollContinuously { responses => // 这个匿名函数在 pollContinuously 被使用而已，其实没什么复杂，就是语法糖而已
+    // 这个匿名函数在 pollContinuously 被使用而已，其实没什么复杂，就是语法糖而已
+    pollContinuously { responses =>
       val response = responses.find { response =>
         response.request.request.header.correlationId == request.request.header.correlationId
       }
@@ -139,7 +139,7 @@ class NetworkClientBlockingOps(val client: NetworkClient) extends AnyVal {
     @tailrec
     def recursivePoll: T = {
 
-      // 在这里阻塞，
+      // 在这里阻塞，等待时间Long.MaxValue，所以就是同步等待了
       // rely on request timeout to ensure we don't block forever
       val responses = client.poll(Long.MaxValue, time.milliseconds()).asScala
 
