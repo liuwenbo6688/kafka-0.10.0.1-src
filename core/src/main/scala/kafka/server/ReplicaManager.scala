@@ -384,9 +384,9 @@ class ReplicaManager(val config: KafkaConfig,
       // 是否需要等follower同步成功，
       if (delayedRequestRequired(requiredAcks, messagesPerPartition, localProduceResults)) {
         /**
-          *
+          * acks = -1时，需要等待ISR中的副本同步完数据，才能返回客户端数据写入成功
           */
-        // 延迟调度，时间轮
+        // 封装DelayedProduce 调度任务，时间轮机制
         // create delayed produce operation
         val produceMetadata = ProduceMetadata(requiredAcks, produceStatus)
         val delayedProduce = new DelayedProduce(timeout, produceMetadata, this, responseCallback)
@@ -596,7 +596,7 @@ class ReplicaManager(val config: KafkaConfig,
       responseCallback(fetchPartitionData)
     } else {
       /**
-        * 没有读到数据，延迟调度?
+        * 没有读到数据（很多时候客户端写入leader数据的频率并不会很高），延迟调度?
         * 最长等待timeout，返回数据
         */
       // construct the fetch results from the read results
@@ -604,7 +604,7 @@ class ReplicaManager(val config: KafkaConfig,
         (topicAndPartition, FetchPartitionStatus(result.info.fetchOffsetMetadata, fetchInfo.get(topicAndPartition).get))
       }
       val fetchMetadata = FetchMetadata(fetchMinBytes, fetchOnlyFromLeader, fetchOnlyCommitted, isFromFollower, fetchPartitionStatus)
-      // DelayedFetch
+      //封装 DelayedFetch 的任务，延迟调度执行
       val delayedFetch = new DelayedFetch(timeout, fetchMetadata, this, responseCallback)
 
       // create a list of (topic, partition) pairs to use as keys for this delayed fetch operation
@@ -1031,7 +1031,7 @@ class ReplicaManager(val config: KafkaConfig,
           /**
            * for producer requests with ack > 1, we need to check
            * if they can be unblocked after some follower's log end offsets have moved
-           * produce任务的延迟调度
+           * 唤醒produce任务的延迟调度，acks=-1，leader需要等待follower拉取数据，才会返回给客户端写入成功
            */
           tryCompleteDelayedProduce(new TopicPartitionOperationKey(topicAndPartition))
         case None =>

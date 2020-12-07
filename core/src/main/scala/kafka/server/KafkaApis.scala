@@ -557,11 +557,13 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
 
       def fetchResponseCallback(delayTimeMs: Int) {
-        trace(s"Sending fetch response to client ${fetchRequest.clientId} of " +
-          s"${convertedPartitionData.values.map(_.messages.sizeInBytes).sum} bytes")
-        val response = FetchResponse(fetchRequest.correlationId, mergedPartitionData, fetchRequest.versionId, delayTimeMs)
-        // 返回数据
-        requestChannel.sendResponse(new RequestChannel.Response(request, new FetchResponseSend(request.connectionId, response)))
+          trace(s"Sending fetch response to client ${fetchRequest.clientId} of " +
+            s"${convertedPartitionData.values.map(_.messages.sizeInBytes).sum} bytes")
+          val response = FetchResponse(fetchRequest.correlationId, mergedPartitionData, fetchRequest.versionId, delayTimeMs)
+          // 返回数据
+          requestChannel.sendResponse(
+            new RequestChannel.Response(request, new FetchResponseSend(request.connectionId, response))
+          )
       }
 
 

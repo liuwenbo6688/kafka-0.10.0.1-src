@@ -128,7 +128,7 @@ abstract class AbstractFetcherThread(name: String,
       trace("Issuing to broker %d of fetch request %s".format(sourceBroker.id, fetchRequest))
 
       /**
-        *  fetch 请求是怎么发出去的
+        *  1. fetch 请求是怎么发出去的
         *  拿到 leader partition broker 返回的数据
         */
       responseData = fetch(fetchRequest)
@@ -148,7 +148,7 @@ abstract class AbstractFetcherThread(name: String,
     fetcherStats.requestRate.mark()
 
     /**
-      * 对 fetch 结果进行处理
+      * 2. 对 fetch 结果进行处理
       * 必然是写入自己本地follower分区的磁盘文件
       * 更新LEO
      */
@@ -172,6 +172,7 @@ abstract class AbstractFetcherThread(name: String,
                       case Some(m: MessageAndOffset) => m.nextOffset
                       case None => currentPartitionFetchState.offset
                     }
+                    // 更新拉取的offset
                     partitionMap.put(topicAndPartition, new PartitionFetchState(newOffset))
                     fetcherLagStats.getAndMaybePut(topic, partitionId).lag = Math.max(0L, partitionData.highWatermark - newOffset)
                     fetcherStats.byteRate.mark(validBytes)

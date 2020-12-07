@@ -410,7 +410,8 @@ class Partition(val topic: String,
     val oldHighWatermark = leaderReplica.highWatermark
 
 
-    if (oldHighWatermark.messageOffset < newHighWatermark.messageOffset || oldHighWatermark.onOlderSegment(newHighWatermark)) {
+    if (oldHighWatermark.messageOffset < newHighWatermark.messageOffset
+          || oldHighWatermark.onOlderSegment(newHighWatermark)) {
       /**
         *  如果当前isr中最小的LEO大于旧的的HW 或者 在老的segment里面，就可以更新hw了
         */
@@ -442,10 +443,8 @@ class Partition(val topic: String,
           val outOfSyncReplicas = getOutOfSyncReplicas(leaderReplica, replicaMaxLagTimeMs)
 
           if(outOfSyncReplicas.size > 0) {
-
             // 2、从isr列表中移除落后的副本
             val newInSyncReplicas = inSyncReplicas -- outOfSyncReplicas
-
 
             assert(newInSyncReplicas.size > 0)
             info("Shrinking ISR for partition [%s,%d] from %s to %s".format(topic, partitionId,
@@ -465,7 +464,8 @@ class Partition(val topic: String,
             false
           }
 
-        case None => false // do nothing if no longer leader
+        case None => false
+        // do nothing if no longer leader 不是leader，任何事情都不做
       }
     }
 
@@ -486,12 +486,12 @@ class Partition(val topic: String,
      * is violated, that replica is considered to be out of sync
       *
       * 两种情况
-      * 1 可能挂了
-      * 2 慢
+      * 1 可能挂了或者fullGC
+      * 2 就是慢，网络、读写性能不佳
      *
      **/
 
-    // 从源码里看，只判断了第一种情况，并没有看到第二种情况？？？？？
+    // 从源码里看，只做了一种判断，follower超过10s没有来拉取数据的情况
     val leaderLogEndOffset = leaderReplica.logEndOffset
     val candidateReplicas = inSyncReplicas - leaderReplica // 扣减掉leader，就是所有的follower
 
@@ -533,9 +533,14 @@ class Partition(val topic: String,
             */
           val info = log.append(messages, assignOffsets = true)
 
-
-          // probably unblock some follower fetch requests since log end offset has been updated
+          /**
+           * probably unblock some follower fetch requests since log end offset has been updated
+           * 可能有follower在fetch数据的时候，没有拉取到数据，此时延迟调度，等待一段时间
+           * 此时就能唤醒在时间轮等待的DelayedFetch任务
+           */
           replicaManager.tryCompleteDelayedFetch(new TopicPartitionOperationKey(this.topic, this.partitionId))
+
+
           // we may need to increment high watermark since ISR could be down to 1
           (info, maybeIncrementLeaderHW(leaderReplica))
 

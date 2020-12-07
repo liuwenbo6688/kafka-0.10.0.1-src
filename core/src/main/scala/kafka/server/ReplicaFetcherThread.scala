@@ -118,6 +118,7 @@ class ReplicaFetcherThread(name: String,
   def processPartitionData(topicAndPartition: TopicAndPartition, fetchOffset: Long, partitionData: PartitionData) {
     try {
       val TopicAndPartition(topic, partitionId) = topicAndPartition
+      //
       val replica = replicaMgr.getReplica(topic, partitionId).get
       val messageSet = partitionData.toByteBufferMessageSet
       warnIfMessageOversized(messageSet, topicAndPartition)
