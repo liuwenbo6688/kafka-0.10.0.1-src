@@ -48,19 +48,53 @@ import kafka.common.TopicAndPartition
 
 class ControllerContext(val zkUtils: ZkUtils,
                         val zkSessionTimeout: Int) {
+  /**
+   * 负责和kafka集群内部Server之间建立channel来进行通信
+   */
   var controllerChannelManager: ControllerChannelManager = null
   val controllerLock: ReentrantLock = new ReentrantLock()
+  /**
+   * 正在关闭的brokers
+   */
   var shuttingDownBrokerIds: mutable.Set[Int] = mutable.Set.empty
   val brokerShutdownLock: Object = new Object
+  /**
+   * KafkaController的年代信息
+   * 一般在leader变化后修改，比如当前leader挂了，新的contorller leader被选举，那么这个值就会加1
+   * 这样就能够判断哪些是旧的controller leader发送的请求
+   */
   var epoch: Int = KafkaController.InitialControllerEpoch - 1
+  /**
+   * controller 年代信息的zk的版本号
+   */
   var epochZkVersion: Int = KafkaController.InitialControllerEpochZkVersion - 1
+  /**
+   * 存放集群中所有的topic
+   */
   var allTopics: Set[String] = Set.empty
+  /**
+   * 保存每一个partition的AR集合，一个partition的replica列表称为"assigned replicas"
+   */
   var partitionReplicaAssignment: mutable.Map[TopicAndPartition, Seq[Int]] = mutable.Map.empty
+  /**
+   * 保存每一个分区的leader副本所在的brokerId, ISR列表以及controller_epoch等信息
+   */
   var partitionLeadershipInfo: mutable.Map[TopicAndPartition, LeaderIsrAndControllerEpoch] = mutable.Map.empty
+  /**
+   * 保存了正在重新分配的副本的分区
+   */
   val partitionsBeingReassigned: mutable.Map[TopicAndPartition, ReassignedPartitionsContext] = new mutable.HashMap
+  /**
+   * 保存了正在进行"优先副本"选举的分区
+   */
   val partitionsUndergoingPreferredReplicaElection: mutable.Set[TopicAndPartition] = new mutable.HashSet
-
+  /**
+   * 保存了当前可用的broker集合
+   */
   private var liveBrokersUnderlying: Set[Broker] = Set.empty
+  /**
+   * 保存了当前可用的broker ID 集合
+   */
   private var liveBrokerIdsUnderlying: Set[Int] = Set.empty
 
   // setter
@@ -349,9 +383,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       // increment the controller epoch
       incrementControllerEpoch(zkUtils.zkClient)
 
-
-      // before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
-      // 注册一个 reassigned partition 的监听器
+      /**
+       * before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
+       * 注册一个 reassigned partition 的监听器
+       * znode: "/admin/reassign_partitions"
+       */
       registerReassignedPartitionsListener()
 
       registerIsrChangeNotificationListener()
@@ -461,11 +497,13 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     val newBrokersSet = newBrokers.toSet
 
 
-    // 发送请求
     // send update metadata request to all live and shutting down brokers. Old brokers will get to know of the new
     // broker via this update.
     // In cases of controlled shutdown leaders will not be elected when a new broker comes up. So at least in the
     // common controlled shutdown case, the metadata will reach the new brokers faster
+    /**
+     * 发送 update metadata请求给所有的存活的broker
+     */
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
 
 
@@ -548,7 +586,13 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def onNewTopicCreation(topics: Set[String], newPartitions: Set[TopicAndPartition]) {
     info("New topic creation callback for %s".format(newPartitions.mkString(",")))
     // subscribe to partition changes
+    /**
+     * 注册每个分区的变更监听
+     */
     topics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
+    /**
+     * 新的分区加入缓存
+     */
     onNewPartitionCreation(newPartitions)
   }
 
@@ -596,12 +640,16 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    *
    * For example, if OAR = {1, 2, 3} and RAR = {4,5,6}, the values in the assigned replica (AR) and leader/isr path in ZK
    * may go through the following transition.
+   * 把副本从broker {1, 2, 3} 挪动到 broker{4,5,6}
    * AR                 leader/isr
-   * {1,2,3}            1/{1,2,3}           (initial state)
-   * {1,2,3,4,5,6}      1/{1,2,3}           (step 2)
+   * {1,2,3}            1/{1,2,3}           (initial state)  初始状态
+   *
+   * {1,2,3,4,5,6}      1/{1,2,3}           (step 2) 2-4步，添加副本4,5,6
    * {1,2,3,4,5,6}      1/{1,2,3,4,5,6}     (step 4)
-   * {1,2,3,4,5,6}      4/{1,2,3,4,5,6}     (step 7)
-   * {1,2,3,4,5,6}      4/{4,5,6}           (step 8)
+   *
+   * {1,2,3,4,5,6}      4/{1,2,3,4,5,6}     (step 7)  重新选举一个新的leader 4
+   *
+   * {1,2,3,4,5,6}      4/{4,5,6}           (step 8) 8-10步，逐步深处副本 1,2,3
    * {4,5,6}            4/{4,5,6}           (step 10)
    *
    * Note that we have to update AR in ZK with RAR last since it's the only place where we store OAR persistently.
@@ -1140,7 +1188,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
             throw new StateChangeFailedException("Leader and isr path written by another controller. This probably" +
               "means the current controller with epoch %d went through a soft failure and another ".format(epoch) +
               "controller was elected with epoch %d. Aborting state change by this controller".format(controllerEpoch))
-          if (leaderAndIsr.isr.contains(replicaId)) {
+          if (leaderAndIsr.isr.coSessionExpirationListenerntains(replicaId)) {
             // if the replica to be removed from the ISR is also the leader, set the new leader value to -1
             val newLeader = if (replicaId == leaderAndIsr.leader) LeaderAndIsr.NoLeader else leaderAndIsr.leader
             var newIsr = leaderAndIsr.isr.filter(b => b != replicaId)
@@ -1243,6 +1291,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     def handleNewSession() {
       info("ZK expired; shut down all controller components and try to re-elect")
       inLock(controllerContext.controllerLock) {
+        /**
+         * 当会话超时，重新连接上的时候，调用之前注册在ZookeeperLeaderElector的onControllerResignation函数
+         * 重新选举
+         */
         onControllerResignation()
         controllerElector.elect
       }

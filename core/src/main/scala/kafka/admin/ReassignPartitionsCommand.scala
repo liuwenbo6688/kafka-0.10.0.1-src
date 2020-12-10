@@ -45,11 +45,16 @@ object ReassignPartitionsCommand extends Logging {
                           JaasUtils.isZkSecurityEnabled())
     try {
       if(opts.options.has(opts.verifyOpt))
-        verifyAssignment(zkUtils, opts)
+         verifyAssignment(zkUtils, opts)
       else if(opts.options.has(opts.generateOpt))
-        generateAssignment(zkUtils, opts)
+         // generate 生成新的分区rebalance方案
+         generateAssignment(zkUtils, opts)
       else if (opts.options.has(opts.executeOpt))
-        executeAssignment(zkUtils, opts)
+        /**
+         *  execute 执行新的分区rebalance方案
+         *  就是把新的分配方案写入到zk中
+         */
+         executeAssignment(zkUtils, opts)
     } catch {
       case e: Throwable =>
         println("Partitions reassignment failed due to " + e.getMessage)
@@ -125,6 +130,10 @@ object ReassignPartitionsCommand extends Logging {
       CommandLineUtils.printUsageAndDie(opts.parser, "If --execute option is used, command must include --reassignment-json-file that was output " + "during the --generate option")
     val reassignmentJsonFile =  opts.options.valueOf(opts.reassignmentJsonFileOpt)
     val reassignmentJsonString = Utils.readFileAsString(reassignmentJsonFile)
+
+    /**
+     *
+     */
     executeAssignment(zkUtils, reassignmentJsonString)
   }
 
@@ -237,8 +246,11 @@ class ReassignPartitionsCommand(zkUtils: ZkUtils, partitions: collection.Map[Top
       }
       else {
         val jsonReassignmentData = zkUtils.formatAsReassignmentJson(validPartitions)
-        // 触发执行副本重分配的方案，把副本重分配的方案写到zk中
-        // 一定是 controller会监听那个副本重分配的znode，感知到有触发的操作，立马就开始执行副本的重分配的操作
+        /**
+         * 触发执行副本重分配的方案，把副本重分配的方案写到zk中
+         * 一定是 controller会监听那个副本重分配的znode，感知到有触发的操作，立马就开始执行副本的重分配的操作
+         * znode: /admin/reassign_partitions
+         */
         zkUtils.createPersistentPath(ZkUtils.ReassignPartitionsPath, jsonReassignmentData)
         true
       }

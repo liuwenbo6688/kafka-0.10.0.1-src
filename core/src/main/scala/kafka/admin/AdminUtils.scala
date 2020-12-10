@@ -399,11 +399,17 @@ object AdminUtils extends Logging {
                   replicationFactor: Int,
                   topicConfig: Properties = new Properties,
                   rackAwareMode: RackAwareMode = RackAwareMode.Enforced) {
-    //
+    /**
+     * 1. 获取元数据
+     */
     val brokerMetadatas = getBrokerMetadatas(zkUtils, rackAwareMode)
-    //
+    /**
+     * 2.指定分区分配方案
+     */
     val replicaAssignment = AdminUtils.assignReplicasToBrokers(brokerMetadatas, partitions, replicationFactor)
-    //
+    /**
+     * 3.创建topic分区，直接写入zk中
+     */
     AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, replicaAssignment, topicConfig)
   }
 
@@ -444,7 +450,8 @@ object AdminUtils extends Logging {
   }
 
   private def writeTopicPartitionAssignment(zkUtils: ZkUtils, topic: String,
-                                            replicaAssignment: Map[Int, Seq[Int]], // 分区： 每个分区的副本分配给哪些broker
+                                            // (分区->每个分区的副本分配给哪些broker)
+                                            replicaAssignment: Map[Int, Seq[Int]],
                                             update: Boolean) {
     try {
 

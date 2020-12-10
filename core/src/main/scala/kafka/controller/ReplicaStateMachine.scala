@@ -48,10 +48,17 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
   private val zkUtils = controllerContext.zkUtils
+  /**
+   * 用于保存每一个副本对应的状态
+   */
   private val replicaState: mutable.Map[PartitionAndReplica, ReplicaState] = mutable.Map.empty
-
+  /**
+   * zookeeper的监听器，用于监听broker的变化，比如broker宕机或者重新上线
+   */
   private val brokerChangeListener = new BrokerChangeListener()
-
+  /**
+   * 用于向指定的Broker批量发送请请求
+   */
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(controller)
   private val hasStarted = new AtomicBoolean(false)
   private val stateChangeLogger = KafkaController.stateChangeLogger
