@@ -41,6 +41,9 @@ import scala.collection._
 
 object ZkUtils {
 
+  /**
+   * 所有kafka在zk上的节点目录
+   */
   val ConsumersPath = "/consumers"
   val BrokerIdsPath = "/brokers/ids"
   val BrokerTopicsPath = "/brokers/topics"

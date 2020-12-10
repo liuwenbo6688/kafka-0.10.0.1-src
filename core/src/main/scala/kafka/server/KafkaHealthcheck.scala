@@ -53,7 +53,7 @@ class KafkaHealthcheck(brokerId: Int,
 
   def startup() {
     zkUtils.zkClient.subscribeStateChanges(sessionExpireListener)
-    //
+    // 注册到zk上
     register()
   }
 

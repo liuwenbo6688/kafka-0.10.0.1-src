@@ -327,9 +327,13 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
         /**
           * 把自己的信息注册到broker上去( /brokers/id/{broker.id} )
+          * KafkaHealthcheck 这个命名是不靠谱的，kafka自己都说了
           */
-        kafkaHealthcheck = new KafkaHealthcheck(config.brokerId, listeners, zkUtils, config.rack,
-          config.interBrokerProtocolVersion)
+        kafkaHealthcheck = new KafkaHealthcheck(config.brokerId,
+                                                listeners,
+                                                zkUtils,
+                                                config.rack,
+                                                config.interBrokerProtocolVersion)
         kafkaHealthcheck.startup()
 
         // Now that the broker id is successfully registered via KafkaHealthcheck, checkpoint it
