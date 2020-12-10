@@ -120,6 +120,9 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
       info("Invoking state change to %s for replicas %s".format(targetState, replicas.mkString(",")))
       try {
         brokerRequestBatch.newBatch()
+        /**
+         *
+         */
         replicas.foreach(r => handleStateChange(r, targetState, callbacks))
         brokerRequestBatch.sendRequestsToBrokers(controller.epoch)
       }catch {
@@ -388,11 +391,16 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               // 死掉的节点处理，移除
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
 
-              //感知到有新的broker变动，立马把信息推送给其他的broker
+
+              /**
+               * 感知到有新的broker加入集群
+               */
               if(newBrokerIds.size > 0)
                 controller.onBrokerStartup(newBrokerIdsSorted)
 
-              //
+              /**
+               * 感知到有broker死掉了
+               */
               if(deadBrokerIds.size > 0)
                 controller.onBrokerFailure(deadBrokerIdsSorted)
 

@@ -218,7 +218,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   private val controlledShutdownPartitionLeaderSelector = new ControlledShutdownLeaderSelector(controllerContext)
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(this)
 
+  /**
+   * 对分区重分配(reassigned)的监听器
+   */
   private val partitionReassignedListener = new PartitionsReassignedListener(this)
+
   private val preferredReplicaElectionListener = new PreferredReplicaElectionListener(this)
   private val isrChangeNotificationListener = new IsrChangeNotificationListener(this)
 
@@ -386,6 +390,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       /**
        * before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
        * 注册一个 reassigned partition 的监听器
+       * 分区重分配，比如说集群新加入Broker，需要把partition挪动到新的broker上
        * znode: "/admin/reassign_partitions"
        */
       registerReassignedPartitionsListener()
@@ -552,13 +557,21 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     val partitionsWithoutLeader = controllerContext.partitionLeadershipInfo.filter(partitionAndLeader =>
       deadBrokersSet.contains(partitionAndLeader._2.leaderAndIsr.leader) &&
         !deleteTopicManager.isTopicQueuedUpForDeletion(partitionAndLeader._1.topic)).keySet
+    /**
+     *
+     */
     partitionStateMachine.handleStateChanges(partitionsWithoutLeader, OfflinePartition)
-    // trigger OnlinePartition state changes for offline or new partitions
+    /**
+     * trigger OnlinePartition state changes for offline or new partitions
+     */
     partitionStateMachine.triggerOnlinePartitionStateChange()
     // filter out the replicas that belong to topics that are being deleted
     var allReplicasOnDeadBrokers = controllerContext.replicasOnBrokers(deadBrokersSet)
     val activeReplicasOnDeadBrokers = allReplicasOnDeadBrokers.filterNot(p => deleteTopicManager.isTopicQueuedUpForDeletion(p.topic))
     // handle dead replicas
+    /**
+     *
+     */
     replicaStateMachine.handleStateChanges(activeReplicasOnDeadBrokers, OfflineReplica)
     // check if topic deletion state for the dead replicas needs to be updated
     val replicasForTopicsToBeDeleted = allReplicasOnDeadBrokers.filter(p => deleteTopicManager.isTopicQueuedUpForDeletion(p.topic))

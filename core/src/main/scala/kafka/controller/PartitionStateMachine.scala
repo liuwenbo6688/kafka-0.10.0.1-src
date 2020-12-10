@@ -185,9 +185,17 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
     info("Invoking state change to %s for partitions %s".format(targetState, partitions.mkString(",")))
     try {
       brokerRequestBatch.newBatch()
+      /**
+       *
+       */
       partitions.foreach { topicAndPartition =>
-        handleStateChange(topicAndPartition.topic, topicAndPartition.partition, targetState, leaderSelector, callbacks)
+            handleStateChange(topicAndPartition.topic,
+                              topicAndPartition.partition,
+                              targetState,
+                              leaderSelector,
+                              callbacks)
       }
+
       brokerRequestBatch.sendRequestsToBrokers(controller.epoch)
     }catch {
       case e: Throwable => error("Error while moving some partitions to %s state".format(targetState), e)
