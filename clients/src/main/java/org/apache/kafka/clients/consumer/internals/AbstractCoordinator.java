@@ -187,7 +187,7 @@ public abstract class AbstractCoordinator implements Closeable {
 
         while (coordinatorUnknown()) {
             /**
-             * 走到这里代表 coordinator 还位置，需要先去找broker询问自己的coordinator是谁
+             * 走到这里代表 coordinator 还未知，需要先去找broker询问自己的coordinator是谁
              * 就是发送 GROUP_COORDINATOR 请求
              */
             RequestFuture<Void> future = sendGroupCoordinatorRequest();
@@ -318,7 +318,11 @@ public abstract class AbstractCoordinator implements Closeable {
                 heartbeat.sentHeartbeat(now);
                 requestInFlight = true;
 
+                /**
+                 * 发送心跳
+                 */
                 RequestFuture<Void> future = sendHeartbeatRequest();
+
                 future.addListener(new RequestFutureListener<Void>() {
                     @Override
                     public void onSuccess(Void value) {

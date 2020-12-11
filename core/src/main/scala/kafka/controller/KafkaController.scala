@@ -1268,7 +1268,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
             throw new StateChangeFailedException("Leader and isr path written by another controller. This probably" +
               "means the current controller with epoch %d went through a soft failure and another ".format(epoch) +
               "controller was elected with epoch %d. Aborting state change by this controller".format(controllerEpoch))
-          if (leaderAndIsr.isr.coSessionExpirationListenerntains(replicaId)) {
+          if (leaderAndIsr.isr.contains(replicaId)) {
             // if the replica to be removed from the ISR is also the leader, set the new leader value to -1
             val newLeader = if (replicaId == leaderAndIsr.leader) LeaderAndIsr.NoLeader else leaderAndIsr.leader
             var newIsr = leaderAndIsr.isr.filter(b => b != replicaId)
