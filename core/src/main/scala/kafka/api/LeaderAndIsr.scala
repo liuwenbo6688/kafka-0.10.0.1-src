@@ -32,7 +32,12 @@ object LeaderAndIsr {
   val LeaderDuringDelete = -2
 }
 
+/**
+  * leader 当前的leader id
+  * isr    isr列表
+  */
 case class LeaderAndIsr(var leader: Int, var leaderEpoch: Int, var isr: List[Int], var zkVersion: Int) {
+
   def this(leader: Int, isr: List[Int]) = this(leader, LeaderAndIsr.initialLeaderEpoch, isr, LeaderAndIsr.initialZKVersion)
 
   override def toString(): String = {

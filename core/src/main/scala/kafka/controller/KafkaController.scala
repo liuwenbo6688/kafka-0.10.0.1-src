@@ -199,6 +199,9 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   val replicaStateMachine = new ReplicaStateMachine(this)
 
 
+  /**
+    *  controller 的选举组件
+    */
   private val controllerElector = new ZookeeperLeaderElector(controllerContext,
                                                       ZkUtils.ControllerPath, // zk的 "/controller" 节点
                                                       onControllerFailover, //onBecomingLeader: onControllerFailover会在当前节点被选举为leader之后调用，
@@ -212,10 +215,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
 
   var deleteTopicManager: TopicDeletionManager = null
 
+  /**
+    * 为分区选举出leader broker
+    */
   val offlinePartitionSelector = new OfflinePartitionLeaderSelector(controllerContext, config)
   private val reassignedPartitionLeaderSelector = new ReassignedPartitionLeaderSelector(controllerContext)
   private val preferredReplicaPartitionLeaderSelector = new PreferredReplicaPartitionLeaderSelector(controllerContext)
   private val controlledShutdownPartitionLeaderSelector = new ControlledShutdownLeaderSelector(controllerContext)
+
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(this)
 
   /**
@@ -382,11 +389,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def onControllerFailover() {
     if(isRunning) {
       info("Broker %d starting become controller state transition".format(config.brokerId))
-      //read controller epoch from zk
-      readControllerEpochFromZookeeper()
-      // increment the controller epoch
-      incrementControllerEpoch(zkUtils.zkClient)
 
+      /**
+        * read controller epoch from zk
+        * increment the controller epoch
+        * 在zk上，增加epoch值，目的是让老的controller的请求失效
+        */
+      readControllerEpochFromZookeeper()
+      incrementControllerEpoch(zkUtils.zkClient)
       /**
        * before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
        * 注册一个 reassigned partition 的监听器
@@ -394,40 +404,72 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
        * znode: "/admin/reassign_partitions"
        */
       registerReassignedPartitionsListener()
-
+      /**
+        * 在 /isr_change_notification 上注册 watcher
+        */
       registerIsrChangeNotificationListener()
+      /**
+        * 在/admin/preferred_replica_election 上注册 watcher
+        */
       registerPreferredReplicaElectionListener()
-
-      // 在这里注册 topics 的监听
+      /**
+        * 在这里注册 topics 的监听器
+        * znode: /brokers/topics
+        */
       partitionStateMachine.registerListeners()
-
-
-
       /**
         * 监听节点("/brokers/ids")的变化 ， broker节点的加入和下线
         * 就是controller感知集群的broker变化
+        * znode: /brokers/ids
         */
       replicaStateMachine.registerListeners()
-
-
+      /**
+        * 初始化上下文信息
+        * 初始化 ControllerContext 对象，设置当前所有topic，“活”着的 broker 列表，所有 partition 的 leader 及 ISR等
+        */
       initializeControllerContext()
-
+      /**
+        *  启动 replicaStateMachine 和 partitionStateMachine
+        */
       replicaStateMachine.startup()
       partitionStateMachine.startup()
-      // register the partition change listeners for all existing topics on failover
-      controllerContext.allTopics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
+      /**
+        * register the partition change listeners for all existing topics on failover
+        * 每一个topic上监听分区的修改
+        */
+      controllerContext.allTopics.foreach(
+          topic => partitionStateMachine.registerPartitionChangeListener(topic)
+      )
+
       info("Broker %d is ready to serve as the new controller with epoch %d".format(config.brokerId, epoch))
+      // 将 brokerState 状态设置为 RunningAsController
       brokerState.newState(RunningAsController)
+
       maybeTriggerPartitionReassignment()
       maybeTriggerPreferredReplicaElection()
-      /* send partition leadership info to all live brokers */
+
+      /**
+        * send partition leadership info to all live brokers
+        * 将每个 partition 的 Leadership 信息发送给所有“活”着的 broker。
+        */
       sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
+
       if (config.autoLeaderRebalanceEnable) {
+        // 若auto.leader.rebalance.enable=true（默认值是true），则启动 partition-rebalance 线程
         info("starting the partition rebalance scheduler")
         autoRebalanceScheduler.startup()
-        autoRebalanceScheduler.schedule("partition-rebalance-thread", checkAndTriggerPartitionRebalance,
-          5, config.leaderImbalanceCheckIntervalSeconds.toLong, TimeUnit.SECONDS)
+
+        autoRebalanceScheduler.schedule(
+                "partition-rebalance-thread",
+                checkAndTriggerPartitionRebalance,  // 检查和触发分区的重新均衡
+                5,
+                config.leaderImbalanceCheckIntervalSeconds.toLong,
+                TimeUnit.SECONDS)
       }
+
+      /**
+        * 若 delete.topic.enable=true 且DeleteTopicPatch(/admin/delete_topics)中有值，则删除相应的Topic
+        */
       deleteTopicManager.start()
     }
     else
@@ -829,7 +871,8 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   def sendRequest(brokerId: Int, apiKey: ApiKeys, apiVersion: Option[Short], request: AbstractRequest, callback: AbstractRequestResponse => Unit = null) = {
-    controllerContext.controllerChannelManager.sendRequest(brokerId, apiKey, apiVersion, request, callback)
+    controllerContext
+      .controllerChannelManager.sendRequest(brokerId, apiKey, apiVersion, request, callback)
   }
 
   def incrementControllerEpoch(zkClient: ZkClient) = {
@@ -869,15 +912,34 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
 
   private def initializeControllerContext() {
     // update controller cache with delete topic information
+    /**
+      * 从zk的/brokers/ids读取活着的broker信息
+      */
     controllerContext.liveBrokers = zkUtils.getAllBrokersInCluster().toSet
+    /**
+      * 从zk的/brokers/topics上读取所有topic信息
+      */
     controllerContext.allTopics = zkUtils.getAllTopics().toSet
+    /**
+      * 获取topic的所有分区信息以及分区所在的broker
+      * znode: /brokers/topics/${topic}
+      */
     controllerContext.partitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(controllerContext.allTopics.toSeq)
+
     controllerContext.partitionLeadershipInfo = new mutable.HashMap[TopicAndPartition, LeaderIsrAndControllerEpoch]
     controllerContext.shuttingDownBrokerIds = mutable.Set.empty[Int]
-    // update the leader and isr cache for all existing partitions from Zookeeper
+    /**
+      * update the leader and isr cache for all existing partitions from Zookeeper
+      * znode: /brokers/topics/${topic}/partitions/${partitionId}/state
+      */
     updateLeaderAndIsrCache()
-    // start the channel manager
+
+    /**
+      * start the channel manager
+      * 启动和集群进行通信的组件
+      */
     startChannelManager()
+
     initializePreferredReplicaElection()
     initializePartitionReassignment()
     initializeTopicDeletion()
@@ -954,7 +1016,12 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   def updateLeaderAndIsrCache(topicAndPartitions: Set[TopicAndPartition] = controllerContext.partitionReplicaAssignment.keySet) {
+    /**
+      * /brokers/topics/${topic}/partitions/${partitionId}/state
+      * 获取分区的leader和isr信息
+      */
     val leaderAndIsrInfo = zkUtils.getPartitionLeaderAndIsrForTopics(zkUtils.zkClient, topicAndPartitions)
+
     for((topicPartition, leaderIsrAndControllerEpoch) <- leaderAndIsrInfo)
       controllerContext.partitionLeadershipInfo.put(topicPartition, leaderIsrAndControllerEpoch)
   }

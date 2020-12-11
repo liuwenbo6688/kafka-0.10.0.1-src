@@ -108,6 +108,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
     /**
       * 监听topic的变化
+      * znode: /brokers/topics
       */
     registerTopicChangeListener()
 
@@ -614,18 +615,19 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
 sealed trait PartitionState { def state: Byte }
 /**
- * 分区创建后，将处于这个状态。此时分区还没有 leader 和 isr
+ * 分区创建之后就处于NewPartition状态
+ * 在这个状态中，分区应该已经分配了副本，但是还没有选举出leader和ISR
  */
 case object NewPartition extends PartitionState { val state: Byte = 0 }
 /**
- * 一旦这个分区的 leader 被选举出来，将处于这个状态。
+ * 一旦分区的leader被推选出来，它就处于OnlinePartition状态
  */
 case object OnlinePartition extends PartitionState { val state: Byte = 1 }
 /**
- * 当分区的 leader 宕机，分区会被转移到这个状态
+ *  如果leader选举出来后，leader broker宕机了，那么该分区就处于OfflinePartition状态
  */
 case object OfflinePartition extends PartitionState { val state: Byte = 2 }
 /**
- * 表示该分区没有被创建过或创建之后又被删除了
+ * 这个状态表示该分区要么没有被创建过或曾经被创建过但后面被删除了
  */
 case object NonExistentPartition extends PartitionState { val state: Byte = 3 }
