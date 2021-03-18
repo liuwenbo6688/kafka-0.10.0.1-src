@@ -88,6 +88,11 @@ class GroupMetadataManager(val brokerId: Int,
   this.logIdent = "[Group Metadata Manager on Broker " + brokerId + "]: "
 
   scheduler.startup()
+
+  /**
+    * 删除过期的offset： deleteExpiredOffsets()
+    * offsets.retention.check.interval.ms
+    */
   scheduler.schedule(name = "delete-expired-consumer-offsets",
     fun = deleteExpiredOffsets,
     period = config.offsetsRetentionCheckIntervalMs,
@@ -373,12 +378,23 @@ class GroupMetadataManager(val brokerId: Int,
    */
   def loadGroupsForPartition(offsetsPartition: Int,
                              onGroupLoaded: GroupMetadata => Unit) {
+    /**
+      * 消费组消费进度Topic: __consumer_offsets
+      */
     val topicPartition = TopicAndPartition(TopicConstants.GROUP_METADATA_TOPIC_NAME, offsetsPartition)
+
+    /**
+      * 启动定时任务，加载consumer_offsets 指定分区的数据
+      */
     scheduler.schedule(topicPartition.toString, loadGroupsAndOffsets)
 
+    /**
+      * loadGroupsAndOffsets 方法就是定时任务执行的方法
+      */
     def loadGroupsAndOffsets() {
       info("Loading offsets and group metadata from " + topicPartition)
 
+      // loadingPartitions 缓存当前正在加载的分区
       loadingPartitions synchronized {
         if (loadingPartitions.contains(offsetsPartition)) {
           info("Offset load from %s already in progress.".format(topicPartition))
@@ -400,6 +416,7 @@ class GroupMetadataManager(val brokerId: Int,
               val removedGroups = mutable.Set[String]()
 
               while (currOffset < getHighWatermark(offsetsPartition) && !shuttingDown.get()) {
+                // 只要小于高水位，就继续循环
                 buffer.clear()
                 val messages = log.read(currOffset, config.loadBufferSize).messageSet.asInstanceOf[FileMessageSet]
                 messages.readInto(buffer, 0)
@@ -409,6 +426,7 @@ class GroupMetadataManager(val brokerId: Int,
                   val baseKey = GroupMetadataManager.readMessageKey(msgAndOffset.message.key)
 
                   if (baseKey.isInstanceOf[OffsetKey]) {
+                    // 读取记录offset信息的消息
                     // load offset
                     val key = baseKey.key.asInstanceOf[GroupTopicPartition]
                     if (msgAndOffset.message.payload == null) {
@@ -432,6 +450,7 @@ class GroupMetadataManager(val brokerId: Int,
                     }
                   } else {
                     // load group metadata
+                    // 读取到记录GorupMetadata信息的消息
                     val groupId = baseKey.key.asInstanceOf[String]
                     val groupMetadata = GroupMetadataManager.readGroupMessageValue(groupId, msgAndOffset.message.payload)
                     if (groupMetadata != null) {
@@ -560,11 +579,19 @@ class GroupMetadataManager(val brokerId: Int,
     offsetsCache.put(key, offsetAndMetadata)
   }
 
+  /**
+    * 删除过期的offsets
+    */
   private def deleteExpiredOffsets() {
     debug("Collecting expired offsets.")
-    val startMs = time.milliseconds()
+    val startMs = time.milliseconds() // 当前时间
 
     val numExpiredOffsetsRemoved = inWriteLock(offsetExpireLock) {
+
+      /**
+        * 过滤出超时时间小于当前时间的offsets
+        * 只有超时不再更新的group的offset，才会被删除
+        */
       val expiredOffsets = offsetsCache.filter { case (groupTopicPartition, offsetAndMetadata) =>
         offsetAndMetadata.expireTimestamp < startMs
       }
@@ -576,10 +603,14 @@ class GroupMetadataManager(val brokerId: Int,
         val offsetsPartition = partitionFor(groupTopicAndPartition.group)
         trace("Removing expired offset and metadata for %s: %s".format(groupTopicAndPartition, offsetAndMetadata))
 
+        /**
+          * 删除offsets的缓存
+          */
         offsetsCache.remove(groupTopicAndPartition)
 
         val commitKey = GroupMetadataManager.offsetCommitKey(groupTopicAndPartition.group,
-          groupTopicAndPartition.topicPartition.topic, groupTopicAndPartition.topicPartition.partition)
+                                                             groupTopicAndPartition.topicPartition.topic,
+                                                             groupTopicAndPartition.topicPartition.partition)
 
         val (magicValue, timestamp) = getMessageFormatVersionAndTimestamp(offsetsPartition)
         (offsetsPartition, new Message(bytes = null, key = commitKey, timestamp = timestamp, magicValue = magicValue))

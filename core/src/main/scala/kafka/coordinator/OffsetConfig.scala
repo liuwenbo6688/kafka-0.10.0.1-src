@@ -51,7 +51,7 @@ object OffsetConfig {
   val DefaultMaxMetadataSize = 4096
   val DefaultLoadBufferSize = 5*1024*1024
   val DefaultOffsetRetentionMs = 24*60*60*1000L
-  val DefaultOffsetsRetentionCheckIntervalMs = 600000L
+  val DefaultOffsetsRetentionCheckIntervalMs = 600000L // 10分钟
   val DefaultOffsetsTopicNumPartitions = 50
   val DefaultOffsetsTopicSegmentBytes = 100*1024*1024
   val DefaultOffsetsTopicReplicationFactor = 3.toShort
