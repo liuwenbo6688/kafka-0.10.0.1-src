@@ -621,6 +621,7 @@ class GroupCoordinator(val brokerId: Int,
   private def propagateAssignment(group: GroupMetadata, errorCode: Short) {
     for (member <- group.allMemberMetadata) {
       if (member.awaitingSyncCallback != null) {
+        // 分区分配方案下发给所有的成员
         member.awaitingSyncCallback(member.assignment, errorCode)
         member.awaitingSyncCallback = null
 
